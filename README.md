@@ -23,3 +23,5 @@ And everyone hates these things. Many different clones all with slightly differe
 
 Because these things are so ubiquitous, many control boards have receptacles for them, and many control software packages are using code that talks to them. So the primary purpose of this project is to build a proper working sound player that is open source, debuggable, actually works as designed, and hopefully can do a lot more.
 
+## Documentation
+Please see the [Wiki](https://github.com/bjoerngiesler/ESP32SoundModule/wiki) for docs.
