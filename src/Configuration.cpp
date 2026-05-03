@@ -10,9 +10,9 @@ void Configuration::clear() {
 }
 
 bool Configuration::readFromFile(const std::string& filename) {
-    FILE_CLASS file;
+    File file;
     
-    if(file.open(filename.c_str(), O_RDONLY) == false) return false;
+    if(!(file = SD.open(filename.c_str(), FILE_READ))) return false;
 
     Dictionary currentSection = sections_["global"];
     std::string currentSectionName = "global";
@@ -59,7 +59,7 @@ void Configuration::print() {
     }
 }
 
-bool Configuration::readLine(FILE_CLASS& file, std::string& line) {
+bool Configuration::readLine(File& file, std::string& line) {
     line = "";
     int val;
     while((val = file.read()) != -1) {
@@ -67,4 +67,23 @@ bool Configuration::readLine(FILE_CLASS& file, std::string& line) {
         line += char(val);
     }
     return line.length() > 0 || val != -1;
+}
+
+bool Configuration::hasSection(const std::string& section) {
+    return sections_.find(section) != sections_.end();
+}
+
+bool Configuration::hasValue(const std::string& section, const std::string& key) {
+    auto secIt = sections_.find(section);
+    if(secIt == sections_.end()) return false;
+    return secIt->second.find(key) != secIt->second.end();
+}
+
+const std::string& Configuration::valueForKey(const std::string& section, const std::string& key, const std::string& defaultValue) const {
+    static std::string empty = "";
+    auto secIt = sections_.find(section);
+    if(secIt == sections_.end()) return defaultValue;
+    auto keyIt = secIt->second.find(key);
+    if(keyIt == secIt->second.end()) return empty;
+    return keyIt->second;
 }

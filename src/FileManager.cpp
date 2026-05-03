@@ -11,7 +11,7 @@ FileManager::FileManager() {
 bool FileManager::start() {
     printf("Initializing SD card... ");
 
-    if(!sd_.begin(SD_CONFIG)) {
+    if(!SD.begin(PIN_CS)) {
         printf("failed!\n");
         return false;
     }
@@ -25,8 +25,9 @@ bool FileManager::stop() {
 }
 
 bool FileManager::listFiles(const std::string& path) {
-    FILE_CLASS root, file;
-    if(!root.open(path.c_str())) {
+    File file, root;
+    root = SD.open(path.c_str(), FILE_READ);
+    if(!root) {
         printf("Failed to open /\n");
         return false;
     }
@@ -36,19 +37,12 @@ bool FileManager::listFiles(const std::string& path) {
     return true;
 }
 
-bool FileManager::listFiles(FILE_CLASS& dir, bool recursive, std::string prefix) {
-    FILE_CLASS file;
+bool FileManager::listFiles(File dir, bool recursive, std::string prefix) {
+    File file;
     int fileCount = 0;
-    char name[255];
-    while(file.openNext(&dir, O_RDONLY)) {
-        memset(name, 0, 255);
-        if(file.getName(name, 254) == 0) {
-            printf("Error getting name of file #%d\n");
-            file.close();
-            return false;
-        }
-        printf("%s%s (0x%x) (%s)", prefix.c_str(), name, file.attrib(), file.isDir() ? "DIR" : "FILE");
-        if(file.isDir() && recursive) {
+    while(file = dir.openNextFile(FILE_READ)) {
+        printf("%s%s (0x%x) (%s)", prefix.c_str(), file.name(), file.size(), file.isDirectory() ? "DIR" : "FILE");
+        if(file.isDirectory() && recursive) {
             printf(":\n");
             listFiles(file, recursive, prefix+"  ");
         } else {
@@ -62,8 +56,8 @@ bool FileManager::listFiles(FILE_CLASS& dir, bool recursive, std::string prefix)
 }
 
 bool FileManager::printContentsOfFile(const std::string& path) {
-    FILE_CLASS file;
-    if(!file.open(path.c_str())) {
+    File file = SD.open(path.c_str(), FILE_READ);
+    if(!file) {
         printf("Couldn't open '%s'\n", path.c_str());
         return false;
     }
@@ -83,37 +77,36 @@ bool FileManager::printContentsOfFile(const std::string& path) {
 
 bool FileManager::printCardInfo() {
     printf("Card type: ");
-    switch(sd_.card()->type()) {
-    case SD_CARD_TYPE_SD1:
+    switch(SD.cardType()) {
+    case CARD_SD:
         printf("SD1\n");
         break;
-    case SD_CARD_TYPE_SD2:
-        printf("SD2\n");
-        break;
-    case SD_CARD_TYPE_SDHC:
+    case CARD_SDHC:
         printf("SDHC\n");
         break;
     default:
         printf("Unknown.\n");
     }
-
-    int32_t freeClusterCount = sd_.freeClusterCount();
-    if (sd_.fatType() <= 32) {
-        printf("Volume is FAT%d\n",sd_.fatType());
+    
+#if 0
+    int32_t freeClusterCount = SD.freeClusterCount();
+    if (SD.fatType() <= 32) {
+        printf("Volume is FAT%d\n",SD.fatType());
     } else {
         printf("Volume is exFAT\n");
     }
-    printf("fatCount:          %d\n", int(sd_.fatCount()));
-    printf("sectorsPerCluster: %d\n", sd_.sectorsPerCluster());
-    printf("fatStartSector:    %d\n", sd_.fatStartSector());
-    printf("dataStartSector:   %d\n", sd_.dataStartSector());
-    printf("clusterCount:      %d\n", sd_.clusterCount());
+    printf("fatCount:          %d\n", int(SD.fatCount()));
+    printf("sectorsPerCluster: %d\n", SD.sectorsPerCluster());
+    printf("fatStartSector:    %d\n", SD.fatStartSector());
+    printf("dataStartSector:   %d\n", SD.dataStartSector());
+    printf("clusterCount:      %d\n", SD.clusterCount());
     printf("freeClusterCount:  ");
     if (freeClusterCount >= 0) {
         printf("%d\n", freeClusterCount);
     } else {
         printf("failed\n");
     }
+#endif
 
     return true;
 }

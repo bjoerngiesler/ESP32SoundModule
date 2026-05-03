@@ -12,7 +12,7 @@ public:
     void clear();
     bool hasSection(const std::string& section);
     bool hasValue(const std::string& section, const std::string& key);
-    const std::string& valueForKey(const std::string& section, const std::string& key);
+    const std::string& valueForKey(const std::string& section, const std::string& key, const std::string& defaultValue = "") const;
     void print();
 protected:
     bool readFromFile(const std::string& filename);
@@ -20,7 +20,7 @@ protected:
     typedef std::map<std::string, std::string> Dictionary;
     std::map<std::string, Dictionary> sections_;
 
-    bool readLine(FILE_CLASS& file, std::string& line);
+    bool readLine(File& file, std::string& line);
 };
 
 #endif // CONFIGURATION_H

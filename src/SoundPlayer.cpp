@@ -11,7 +11,7 @@ SoundPlayer::SoundPlayer() {
 }
 
 bool SoundPlayer::start() {
-    Serial1.begin(9600, SERIAL_8N1, D7, D6);
+    Serial1.begin(9600, SERIAL_8N1, RX, TX);
     return true;
 }
 
