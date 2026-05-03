@@ -1,93 +1,149 @@
 #include <Arduino.h>
+#include "Settings.h"
 #include "SoundPlayer.h"
 
 SoundPlayer SoundPlayer::inst;
 
-std::map<CommandCode, std::function<bool(const Command& cmd)>> SoundPlayer::callbackMap_ = {
-};
+void printMetaData(MetaDataType type, const char* str, int len){
+  Serial.print("==> ");
+  Serial.print(toStr(type));
+  Serial.print(": ");
+  Serial.println(str);
+}
+
 
 SoundPlayer::SoundPlayer() {
-
+    pinMode(PIN_I2S_BCK, OUTPUT);
+    pinMode(PIN_I2S_DATA_OUT, OUTPUT);
+    pinMode(PIN_I2S_WS, OUTPUT);
 }
 
 bool SoundPlayer::start() {
-    Serial1.begin(9600, SERIAL_8N1, RX, TX);
+    Serial.println("Starting SoundPlayer...");
+    // Set up I2S
+    auto cfg = i2s_.defaultConfig(TX_MODE);
+    cfg.bits_per_sample = 16;
+    cfg.sample_rate = 44100;
+    cfg.channels = 1;
+    cfg.pin_data = 2;
+    cfg.pin_ws = 3;
+    cfg.pin_bck = 4;
+    cfg.is_master = true;
+    i2s_.begin(cfg);
+
+    volumeStream_.setOutput(i2s_);
+    volumeStream_.setVolume(.5f);
+
+    Serial.println("SoundPlayer started");
     return true;
+}
+
+void SoundPlayer::setVolume(float volume) {
+    volumeStream_.setVolume(volume);
 }
 
 bool SoundPlayer::step() {
-    Command cmd;
-    if(readCommand(cmd, 1000) == false)  return false;
-    printf("Command: %02x Para1: %0x Para2: %0x Wants feedback: %d\n", cmd.cmd, cmd.para1, cmd.para2, cmd.feedback);
-    if(callbackMap_.find(cmd.cmd) != callbackMap_.end()) {
-        return callbackMap_[cmd.cmd](cmd);
-    } 
-    printf("Unknown / unhandled command 0x%02x\n", cmd.cmd);
-    return false;
+    if(playing_) {
+        size_t numbytes = copier_.copy();
+        if(numbytes == 0) {
+            Serial.println("Finished playing");
+            playing_ = false;
+            audioFile_.close();
+        } 
+    }
+    return true;
 }
 
 bool SoundPlayer::stop() {
+    if(playing_) {
+        playing_ = false;
+    }
     return true;
 }
 
-bool SoundPlayer::waitAvailable(unsigned int timeout, uint8_t& byte) {
-    while(!Serial1.available() && timeout > 0) {
-        timeout--;
-        delay(1);
-    }
-    if(!Serial1.available()) {
-        return false;
-    }
-    byte = Serial1.read();
-    return true;
+void SoundPlayer::stopPlayback() {
+    playing_ = false;
 }
 
-bool SoundPlayer::readCommand(Command& command, unsigned int timeout) {
-    uint8_t sync, ver, len, cmd, feedback, para1, para2, checksum;
-
-    // sync
-    while(true) {
-        if(!waitAvailable(timeout, sync)) {
-            //printf("Timeout while waiting for sync byte\n");
-            return false;
-        }
-        if(sync == 0x7e) break;
-        while(true) {
-            if(!waitAvailable(timeout, sync)) {
-                //printf("Timeout while waiting for sync byte\n");
-                return false;
-            }
-            if(sync == 0xef) break;
-        }
-    }
-
-    if(!waitAvailable(timeout, ver)) {
-        //printf("Timeout while waiting for version byte\n");
+bool SoundPlayer::playFile(const std::string& path) {
+    std::string p = std::string("/")+path;
+    audioFile_ = SD.open(p.c_str(), FILE_READ);
+    if(!audioFile_) {
+        Serial.printf("Failed to open file '%s'\n", p.c_str());
         return false;
     }
-    if(!waitAvailable(timeout, len)) {
-        //printf("Timeout while waiting for length byte\n");
+    Serial.printf("Playing file '%s'\n", p.c_str());
+    if(path.rfind(".wav") != std::string::npos) {
+        wav_.begin();
+        
+        decoder_.setOutput(volumeStream_);
+        decoder_.setDecoder(&wav_);
+        decoder_.addNotifyAudioChange(i2s_);
+        decoder_.addNotifyAudioChange(volumeStream_);
+        decoder_.begin();
+
+        copier_.begin(decoder_, audioFile_);
+        
+        playing_ = true;
+    } else if(path.rfind(".mp3") != std::string::npos) {
+        mp3_.begin();
+
+        decoder_.setOutput(volumeStream_);
+        decoder_.setDecoder(&mp3_);
+        decoder_.addNotifyAudioChange(i2s_);
+        decoder_.addNotifyAudioChange(volumeStream_);
+        decoder_.begin();
+
+        copier_.begin(decoder_, audioFile_);
+        playing_ = true;
+    } else if(path.rfind(".stream") != std::string::npos) {
+        std::string url = audioFile_.readString().c_str();
+        while(url.length() > 0 && (url.back() == '\n' || url.back() == '\r')) url.pop_back(); // Trim trailing newlines
+        Serial.printf("Streaming from URL: '%s'\n", url.c_str());
+        mp3_.begin();
+        urlStream_.begin(url.c_str(), "audio/mp3");
+
+        decoder_.setOutput(volumeStream_);
+        decoder_.setDecoder(&mp3_);
+        decoder_.addNotifyAudioChange(i2s_);
+        decoder_.addNotifyAudioChange(volumeStream_);
+        decoder_.begin();
+
+        copier_.begin(decoder_, urlStream_);
+        playing_ = true;
+    } else {
+        Serial.println("Unsupported file type");
+        audioFile_.close();
+        playing_ = false;
         return false;
     }
-
-    uint8_t* buf = new uint8_t[len];
-    for(int i=0; i<len; i++) {
-        if(!waitAvailable(timeout, buf[i])) {
-            delete[] buf;
-            return false;
-        }
-    }
-
-    if(len != 6) {
-        printf("Unknown length\n");
-        delete[] buf;
-        return false;
-    }
-
-    command.cmd = (CommandCode)buf[0];
-    command.feedback = buf[1]>0;
-    command.para1 = buf[2];
-    command.para2 = buf[3];
 
     return true;
+#if 0
+    std::string p = std::string("/")+path; 
+    Serial.printf("Playing file '%s'\n", p.c_str());
+
+    if(source_ != nullptr || decoder_) {
+        player_.stop();
+    }
+    if(source_ != nullptr) {
+        delete source_;
+        source_ = nullptr;
+    }
+    if(decoder_ != nullptr) {
+        delete decoder_;
+        decoder_ = nullptr;
+    }
+
+    source_ = new AudioSourceSD("/system");
+    player_.setAudioSource(*source_);
+    if(path.rfind(".wav") != std::string::npos) {
+        decoder_ = new WAVDecoder();
+        player_.setDecoder(*decoder_);
+        player_.setMetadataCallback(printMetaData);
+        player_.begin();
+    } 
+
+    return true;
+#endif
 }

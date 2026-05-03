@@ -76,9 +76,11 @@ enum PlaySource {
 };
 
 struct Command {
+    uint8_t version;
     CommandCode cmd;
     bool feedback;
     uint8_t para1, para2;
+    uint16_t checksum;
 };
 
 #endif // SOUNDPLAYERCOMMANDS_H

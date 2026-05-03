@@ -38,7 +38,24 @@ bool Configuration::readFromFile(const std::string& filename) {
             continue; // Invalid line
         }
         std::string key = line.substr(0, eqPos);
+        while(!key.empty() && isspace(key.back())) key.pop_back(); // Trim trailing whitespace from key
+        while(!key.empty() && isspace(key.front())) key.erase(key.begin()); // Trim leading whitespace from key
         std::string value = line.substr(eqPos+1);
+        while(!value.empty() && isspace(value.back())) value.pop_back(); // Trim trailing whitespace from value
+        while(!value.empty() && isspace(value.front())) value.erase(value.begin()); // Trim
+        if(key.length() == 0 || value.length() == 0) {
+            continue; // Invalid line
+        }
+        if(key.size() >= 2 && 
+           (key[0] == '"' && key[key.size()-1] == '"') ||
+           (key[0] == '\'' && key[key.size()-1] == '\'')) {
+            key = key.substr(1, key.length()-2); // Remove quotes around key
+        }
+        if(value.size() >= 2 && 
+           (value[0] == '"' && value[value.size()-1] == '"') ||
+           (value[0] == '\'' && value[value.size()-1] == '\'')) {
+            value = value.substr(1, value.length()-2); // Remove quotes around value
+        }
         if(key.length() == 0 || value.length() == 0) {
             continue; // Invalid line
         }
@@ -80,10 +97,9 @@ bool Configuration::hasValue(const std::string& section, const std::string& key)
 }
 
 const std::string& Configuration::valueForKey(const std::string& section, const std::string& key, const std::string& defaultValue) const {
-    static std::string empty = "";
     auto secIt = sections_.find(section);
     if(secIt == sections_.end()) return defaultValue;
     auto keyIt = secIt->second.find(key);
-    if(keyIt == secIt->second.end()) return empty;
+    if(keyIt == secIt->second.end()) return defaultValue;
     return keyIt->second;
 }
