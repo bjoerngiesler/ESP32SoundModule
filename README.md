@@ -1,18 +1,25 @@
-# ESP32SoundModule
+# Danube Fanfare Player
 This repository contains code for a sound playback module to replace a very popular MP3 player which is used in many robotics projects, but comes with a lot of problems that we will hopefully fix. And we will add a lot of features.
 
-The sound module is based on ESP32S3 hardware ([Xiao ESP32S3](https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/)) or [Adafruit Qt PY ESP](https://www.adafruit.com/product/5426)) and Adafruit's [Audio BFF](https://www.adafruit.com/product/5769) combination SD card and D/A converter bundle.
+The sound module is based on ESP32S3 hardware ([Xiao ESP32S3](https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/)) or [Adafruit Qt PY ESP](https://www.adafruit.com/product/5426)) and Adafruit's [Audio BFF](https://www.adafruit.com/product/5769) combination SD card and D/A converter bundle. The software is based on Paul Schatzmann's [Arduino Audio Tools](https://github.com/pschatzmann/arduino-audio-tools) library.
+
+An adapter board that will allow plugging the ESP32/BFF bundle directly into a slot used for "that MP3 player module" is in development, and will be available for purchase at [my Etsy store](https://www.etsy.com/de-en/shop/ComposeMantis) as soon as it is ready.
 
 **Current Features:**
 * Drop in protocol replacement for "that popular MP3 player" (partly)
 * Configuration via INI file
+* WAV playback
+* MP3 playback
+* MP3-based internet stream playback
+* WiFi connection
 
 **Planned Features:**
 * Drop in protocol replacement for "that popular MP3 player" (full)
+* Bluetooth headset connectivity
+* Bluetooth audio player 
+* Effects on Bluetooth headset connectivity
 * Monaco implementation for direct sound triggering (via ESPnow, Bluetooth, and UDP)
 * Monaco bridge to add ESPnow communication to controlling robot
-* WAV playback
-* MP3 playback
 * Sound generation for robot motion sounds
 * Sound generation for robot utterings
 
