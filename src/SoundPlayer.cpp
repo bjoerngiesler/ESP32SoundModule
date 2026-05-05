@@ -34,8 +34,42 @@ bool SoundPlayer::start() {
     volumeStream_.setOutput(i2s_);
     volumeStream_.setVolume(.5f);
 
+    setSignalGeneratorFrequency(440.0f);
+    setSignalGeneratorWaveform(SINE);
+    enableSignalGenerator(false);
+
     Serial.println("SoundPlayer started");
     return true;
+}
+
+void SoundPlayer::enableSignalGenerator(bool enable) {
+    signalGeneratorEnabled_ = enable;
+    if(enable) {
+        switch(signalGeneratorWaveform_) {
+            case SINE:
+                signalGeneratorStream_.setInput(sineGen_);
+                break;
+            case SQUARE:
+                signalGeneratorStream_.setInput(squareGen_);
+                break;
+            case SAWTOOTH:
+            default:
+                signalGeneratorStream_.setInput(sawtoothGen_);
+                break;
+        }
+        signalGeneratorStream_.begin();
+        copier_.begin(volumeStream_, signalGeneratorStream_);
+    }
+}
+
+void SoundPlayer::setSignalGeneratorFrequency(float frequency) {
+    sineGen_.setFrequency(frequency);
+    sawtoothGen_.setFrequency(frequency);
+    squareGen_.setFrequency(frequency);
+} 
+
+void SoundPlayer::setSignalGeneratorWaveform(Waveform w) {
+    signalGeneratorWaveform_ = w;
 }
 
 void SoundPlayer::setVolume(float volume) {

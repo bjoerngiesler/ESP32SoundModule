@@ -96,10 +96,55 @@ bool Configuration::hasValue(const std::string& section, const std::string& key)
     return secIt->second.find(key) != secIt->second.end();
 }
 
-const std::string& Configuration::valueForKey(const std::string& section, const std::string& key, const std::string& defaultValue) const {
+std::string Configuration::valueForKey(const std::string& section, const std::string& key, const char* defaultValue) const {
     auto secIt = sections_.find(section);
     if(secIt == sections_.end()) return defaultValue;
     auto keyIt = secIt->second.find(key);
     if(keyIt == secIt->second.end()) return defaultValue;
     return keyIt->second;
+}
+
+float Configuration::valueForKey(const std::string& section, const std::string& key, float defaultValue) const {
+    auto secIt = sections_.find(section);
+    if(secIt == sections_.end()) return defaultValue;
+    auto keyIt = secIt->second.find(key);
+    if(keyIt == secIt->second.end()) return defaultValue;
+    
+    float var;
+    if(sscanf(keyIt->second.c_str(), "%f", &var) != 1) {
+        printf("Could not convert value '%s' for key '[%s]:%s to float. Returning default %f.", 
+               keyIt->second.c_str(), section.c_str(), key.c_str(), defaultValue);
+        return defaultValue;
+    }
+    return var;
+}
+
+int Configuration::valueForKey(const std::string& section, const std::string& key, int defaultValue) const {
+    auto secIt = sections_.find(section);
+    if(secIt == sections_.end()) return defaultValue;
+    auto keyIt = secIt->second.find(key);
+    if(keyIt == secIt->second.end()) return defaultValue;
+    
+    int var;
+    if(sscanf(keyIt->second.c_str(), "%d", &var) != 1) {
+        printf("Could not convert value '%s' for key '[%s]:%s to int. Returning default %d.", 
+               keyIt->second.c_str(), section.c_str(), key.c_str(), defaultValue);
+        return defaultValue;
+    }
+    return var;    
+}
+
+bool Configuration::valueForKey(const std::string& section, const std::string& key, bool defaultValue) const {
+    auto secIt = sections_.find(section);
+    if(secIt == sections_.end()) return defaultValue;
+    auto keyIt = secIt->second.find(key);
+    if(keyIt == secIt->second.end()) return defaultValue;
+    
+    std::string val = keyIt->second;
+    std::transform(val.begin(), val.end(), val.begin(), [](unsigned char c){return std::tolower(c);});
+    if(val == "true" || val == "on" || val == "yes") return true;
+    if(val == "false" || val == "off" || val == "no") return false;
+    printf("Could not convert value '%s' for key '[%s]:%s to bool. Returning default %s.", 
+            keyIt->second.c_str(), section.c_str(), key.c_str(), defaultValue ? "true" : "false");
+    return defaultValue;
 }

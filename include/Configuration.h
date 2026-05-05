@@ -12,7 +12,10 @@ public:
     void clear();
     bool hasSection(const std::string& section);
     bool hasValue(const std::string& section, const std::string& key);
-    const std::string& valueForKey(const std::string& section, const std::string& key, const std::string& defaultValue = "") const;
+    std::string valueForKey(const std::string& section, const std::string& key, const char* defaultValue = "") const;
+    float valueForKey(const std::string& section, const std::string& key, float defaultValue) const;
+    int valueForKey(const std::string& section, const std::string& key, int defaultValue) const;
+    bool valueForKey(const std::string& section, const std::string& key, bool defaultValue) const;
     void print();
 protected:
     bool readFromFile(const std::string& filename);

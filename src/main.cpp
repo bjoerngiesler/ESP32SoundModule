@@ -31,8 +31,8 @@ void startup() {
         while (WiFi.status() != WL_CONNECTED) delay(1500);
     }
 #endif
-    bool ignoreDotfiles = config.valueForKey("global", "ignore_dotfiles", "true") == "true";
-    bool ignoreNonNumeric = config.valueForKey("global", "ignore_non_numeric", "false") == "true";
+    bool ignoreDotfiles = config.valueForKey("global", "ignore_dotfiles", true);
+    bool ignoreNonNumeric = config.valueForKey("global", "ignore_non_numeric", false);
     FileManager::FileIndexingMode indexingMode = FileManager::IndexNumAl;
     std::string indexingModeStr = config.valueForKey("global", "file_indexing_mode", "numal");
     if(indexingModeStr == "alnum") {
@@ -49,13 +49,25 @@ void startup() {
     FileManager::inst.buildFolderMap();
 
     SoundPlayer::inst.start();
-    float volume = std::stof(config.valueForKey("global", "volume", "0.8"));
-    Serial.printf("Setting volume to %f\n", volume);
-    SoundPlayer::inst.setVolume(volume);
+    // volume goes from 0 to 30 in config file for compatibility
+    float vol = config.valueForKey("global", "volume", 24)/30.0f;
+    SoundPlayer::inst.setVolume(constrain(vol, 0, 1));
     if(initial && config.hasValue("global", "play_on_startup")) {
         SoundPlayer::inst.playFile(config.valueForKey("global", "play_on_startup"));
     } else if(config.hasValue("global", "play_on_insert")) {
         SoundPlayer::inst.playFile(config.valueForKey("global", "play_on_insert"));
+    }
+
+    bool signalGenerator = config.valueForKey("global", "signal_generator", true);
+    if(signalGenerator) {
+        Serial.println("Starting signal generator");
+        float frequency = config.valueForKey("global", "signal_generator_frequency", 440.0f);
+        std::string waveform = config.valueForKey("global", "signal_generator_waveform", "sine");
+        if(waveform == "square") SoundPlayer::inst.setSignalGeneratorWaveform(SoundPlayer::SQUARE);
+        else if(waveform == "sawtooth") SoundPlayer::inst.setSignalGeneratorWaveform(SoundPlayer::SAWTOOTH);
+        else SoundPlayer::inst.setSignalGeneratorWaveform(SoundPlayer::SINE);
+        SoundPlayer::inst.setSignalGeneratorFrequency(frequency);
+        SoundPlayer::inst.enableSignalGenerator(true);
     }
 
     initial = false;
