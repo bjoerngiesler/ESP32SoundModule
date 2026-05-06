@@ -12,7 +12,7 @@ FileManager::FileManager() {
 bool FileManager::start() {
     sdInitialized_ = false;
     printf("Initializing SD card... ");
-    if(!SD.begin(PIN_CS)) {
+    if(!SD.begin(P_SD_CS)) {
         printf("failed!\n");
         return false;
     }
@@ -30,7 +30,7 @@ bool FileManager::isCardPresent() {
     std::vector<std::string> files;
 
     if(sdInitialized_ == false) {
-        if(!SD.begin(PIN_CS)) {
+        if(!SD.begin(P_SD_CS)) {
             printf("failed!\n");
             return false;
         }

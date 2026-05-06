@@ -1,7 +1,9 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include "Settings.h"
-#include "SoundPlayer.h"
+#include "FilePlayer.h"
+#include "SignalGenerator.h"
+#include "MixedOutput.h"
 #include "FileManager.h"
 #include "Configuration.h"
 #include "DFPHandler.h"
@@ -15,10 +17,12 @@ bool initial = true;
 
 void startup() {
     Configuration config("/config.ini");
+#if 0
     printf("Read configuration:\n");
     printf("---------------\n");
     config.print();
     printf("---------------\n");
+#endif
 
     // FIXME Read and store file for "play_on_remove"
 #if 0
@@ -48,34 +52,41 @@ void startup() {
     FileManager::inst.buildFileMap();
     FileManager::inst.buildFolderMap();
 
-    SoundPlayer::inst.start();
-    // volume goes from 0 to 30 in config file for compatibility
-    float vol = config.valueForKey("global", "volume", 24)/30.0f;
-    SoundPlayer::inst.setVolume(constrain(vol, 0, 1));
-    if(initial && config.hasValue("global", "play_on_startup")) {
-        SoundPlayer::inst.playFile(config.valueForKey("global", "play_on_startup"));
-    } else if(config.hasValue("global", "play_on_insert")) {
-        SoundPlayer::inst.playFile(config.valueForKey("global", "play_on_insert"));
+#if !defined(ONLY_FILE_PLAYER)
+    MixedOutput::inst.start(false);
+#endif
+
+    if(config.valueForKey("global", "signal_generator", false) == true) {
+        Serial.println("Starting signal generator");
+        float frequency = config.valueForKey("signal_generator", "frequency", 440.0f);
+        std::string waveform = config.valueForKey("signal_generator", "waveform", "sine");
+        if(waveform == "square") SignalGenerator::inst.begin(frequency, SignalGenerator::SQUARE);
+        else if(waveform == "sawtooth") SignalGenerator::inst.begin(frequency, SignalGenerator::SAWTOOTH);
+        else SignalGenerator::inst.begin(frequency, SignalGenerator::SINE);
+        SignalGenerator::inst.setWeight(config.valueForKey("signal_generator", "weight", 100));
     }
 
-    bool signalGenerator = config.valueForKey("global", "signal_generator", true);
-    if(signalGenerator) {
-        Serial.println("Starting signal generator");
-        float frequency = config.valueForKey("global", "signal_generator_frequency", 440.0f);
-        std::string waveform = config.valueForKey("global", "signal_generator_waveform", "sine");
-        if(waveform == "square") SoundPlayer::inst.setSignalGeneratorWaveform(SoundPlayer::SQUARE);
-        else if(waveform == "sawtooth") SoundPlayer::inst.setSignalGeneratorWaveform(SoundPlayer::SAWTOOTH);
-        else SoundPlayer::inst.setSignalGeneratorWaveform(SoundPlayer::SINE);
-        SoundPlayer::inst.setSignalGeneratorFrequency(frequency);
-        SoundPlayer::inst.enableSignalGenerator(true);
+    if(config.valueForKey("global", "file_player", true) == true) {
+        Serial.println("Starting file player");
+        FilePlayer::inst.start();
+        if(initial && config.hasValue("global", "play_on_startup")) {
+            FilePlayer::inst.playFile(config.valueForKey("global", "play_on_startup"));
+        } else if(config.hasValue("global", "play_on_insert")) {
+            FilePlayer::inst.playFile(config.valueForKey("global", "play_on_insert"));
+        }
+        FilePlayer::inst.setWeight(config.valueForKey("file_player", "weight", 100));
     }
+
+    // volume goes from 0 to 30 in config file for compatibility
+    float vol = config.valueForKey("global", "volume", 24)/30.0f;
+    MixedOutput::inst.setOutputVolume(constrain(vol, 0.0f, 1.0f));
 
     initial = false;
 }
 
 void teardown(void) {
     // FIXME Read and store file for "play_on_remove"
-    SoundPlayer::inst.stop();
+    MixedOutput::inst.stop();
 
     if(WiFi.status() == WL_CONNECTED) {
         WiFi.disconnect();
@@ -85,12 +96,10 @@ void teardown(void) {
 void setup(void) {
     Serial.begin(2000000);
     while(!Serial) delay(10);
-    Serial.println("\n\nStarting up...");
-    delay(1000);
-
-    FileManager::inst.start();
-    SoundPlayer::inst.start();
+    delay(3000);
     DFPHandler::inst.start();
+
+    AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
 
     if(FileManager::inst.isCardPresent()) {
         startup();
@@ -98,6 +107,7 @@ void setup(void) {
 }
 
 void loop(void) {
+#if 0
     static bool cardPresent = FileManager::inst.isCardPresent();
 
     if(cardPresent && !FileManager::inst.isCardPresent()) {
@@ -110,7 +120,12 @@ void loop(void) {
         cardPresent = true;
         startup();
     }
-
-    SoundPlayer::inst.step();
-    DFPHandler::inst.step();
+#endif
+    // DFPHandler::inst.step();
+    FilePlayer::inst.step();
+#if defined(ONLY_FILE_PLAYER)
+#else
+    MixedOutput::inst.step();
+#endif
+    vTaskDelay(1);
 }
