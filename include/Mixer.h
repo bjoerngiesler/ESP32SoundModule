@@ -1,7 +1,8 @@
-#if !defined(MIXEDOUTPUT_H)
-#define MIXEDOUTPUT_H
+#if !defined(MIXER_H)
+#define MIXER_H
 
 #include "MixerInput.h"
+#include "Settings.h"
 #include <Arduino.h>
 #include <AudioTools.h>
 #include <AudioTools/Disk/AudioSourceSD.h>
@@ -18,9 +19,9 @@
 //   -> VolumeStream (master volume control)
 //   -> I2SStream    (output)
 
-class MixedOutput {
+class Mixer: public AudioInfoSupport {
 public:
-    static MixedOutput inst;
+    static Mixer inst;
 
     bool start(bool multicore);
     bool stop();
@@ -29,28 +30,34 @@ public:
     void lockAudioChange();
     void unlockAudioChange();
 
-    int add(MixerInput& input, int weight = 100);
-    bool remove(MixerInput& input);
-    bool remove(int index);
-    void setWeight(int index, int weight);
+    AudioInfo audioInfo() override { return Mixer::inst.audioInfo(); }
+    void setAudioInfo(AudioInfo from) override;
+
+    size_t numInputs() { return mixer_.size(); }
+
+    bool setInput(MixerInput& input, size_t ch, float weight = 1.0);
+    bool removeInput(size_t ch);
+    bool setWeight(size_t ch, float weight);
+
     void setOutputVolume(float volume) { volumeStream_.setVolume(volume); }
 
-    AudioInfo audioInfo() { return info_; }
-
 protected:
-    MixedOutput();
+    Mixer();
     void loop();
     
     I2SStream i2s_;
     VolumeStream volumeStream_; // master volume
-    InputMixer<int16_t> mixer_;
-    StreamCopy copier_;
+    OutputMixer<int16_t> mixer_;
+    StreamCopy inputCopiers_[NUM_MIXER_INPUTS];
+    BufferedStream dummyStream_;
 
     TaskHandle_t taskHandle_ = nullptr;
     SemaphoreHandle_t audioChangeHandle_ = nullptr;
     bool isRunning_ = false, shouldStop_ = false;
 
+    bool multicore_ = false;
+
     AudioInfo info_;
 };
 
-#endif // MIXEDOUTPUT_H
+#endif // MIXER_H

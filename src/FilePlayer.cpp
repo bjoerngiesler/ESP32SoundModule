@@ -1,14 +1,16 @@
 #include <Arduino.h>
 #include "Settings.h"
 #include "FilePlayer.h"
-#include "MixedOutput.h"
+#include "Mixer.h"
 
 FilePlayer FilePlayer::inst;
 
+#if defined(ONLY_FILE_PLAYER)
 SineWaveGenerator<int16_t> sineWave1(SAMPLE_RATE);                // subclass of SoundGenerator with max amplitude of 32000
 SineWaveGenerator<int16_t> sineWave2(SAMPLE_RATE);                // subclass of SoundGenerator with max amplitude of 32000
 GeneratedSoundStream<int16_t> sound1(sineWave1);             // Stream generated from sine wave
 GeneratedSoundStream<int16_t> sound2(sineWave2);             // Stream generated from sine wave
+#endif
 
 // Pipeline:
 // URLStreamESP32 or AudioSourceSD (file) 
@@ -23,9 +25,15 @@ void printMetaData(MetaDataType type, const char* str, int len){
   Serial.println(str);
 }
 
-FilePlayer::FilePlayer(): mixer_(i2s_, 1), mixerCopier1_(BUFFER_SIZE), mixerCopier2_(BUFFER_SIZE), copier_(BUFFER_SIZE), mixerBuffer_(BUFFER_SIZE, mixer_) {
+FilePlayer::FilePlayer():
+    outputBuffer_(AUDIO_BUFFER_SIZE)
 #if defined(ONLY_FILE_PLAYER)
+,   mixer_(i2s_, 1), 
+    mixerCopier1_(AUDIO_BUFFER_SIZE), 
+    mixerCopier2_(AUDIO_BUFFER_SIZE), 
+    copier_(AUDIO_BUFFER_SIZE), 
 #endif
+{
 }
 
 bool FilePlayer::start() {
@@ -46,16 +54,31 @@ bool FilePlayer::start() {
     sineWave2.begin(DEFAULT_AUDIO_INFO, N_E5);
 
     mixerCopier1_.begin(mixer_, sound1);
-    mixerCopier2_.begin(mixer_, mixerBuffer_);
+    mixerCopier2_.begin(mixer_, buffer_);
+
+    buffer_.setOutput(mixer_);
 
     mixer_.setOutput(i2s_);
     mixer_.setOutputCount(2);
-#endif
     mixer_.setWeight(0, 0.2f);
     mixer_.setWeight(1, 1.0f);
-
     volume_.setVolume(1.0f);
     volume_.begin();
+
+#endif
+
+    // decoder_.addNotifyAudioChange(*this);
+    // decoder_.addNotifyAudioChange(volume_);
+    // decoder_.begin();
+
+#if 0
+    volume_.setStream(decoder_);
+    volume_.setAudioInfo(Mixer::inst.audioInfo());
+    volume_.begin();
+#endif
+
+    // outputBuffer_.setStream(decoder_);
+    // outputBuffer_.begin();
 
     return true;
 }
@@ -77,16 +100,18 @@ bool FilePlayer::step() {
 #endif
 
     if(!playing_) {
+        printf("Not playing\n");
         return true;
     }
 
-    numbytes = copier_.copy();
+    numbytes = copier_.copyBytes(AUDIO_BUFFER_SIZE);
     if(numbytes == 0 && playing_ == true) {
         Serial.println("Finished playing");
         playing_ = false;
         audioFile_.close();
     } else {
-        Serial.printf("FilePlayer: Copied %d bytes\n", (int)numbytes);
+        Serial.printf("FilePlayer: Copied %d bytes to 0x%x; now available %d\n", (int)numbytes, copier_.getTo());
+        Serial.printf("Available on decoder (0x%x) now: %d\n", &decoder_, decoder_.available());
     }
 
     return true;
@@ -102,17 +127,18 @@ void FilePlayer::stopPlayback() {
 #if defined(ONLY_FILE_PLAYER)
     i2s_.end();
 #else
-    MixedOutput::inst.remove(*this);
+    //MixedOutput::inst.remove(*this);
 #endif
-    decoder_.end();
-    copier_.end();
     playing_ = false;
 }
 
 void FilePlayer::setAudioInfo(AudioInfo from) {
-    AudioInfo current = MixedOutput::inst.audioInfo();
-    printf("New audioInfo: sample_rate: %d / channels: %d / bits_per_sample: %d\n", (int)from.sample_rate, (int)from.channels, (int)from.bits_per_sample);
-    printf("MixedOutput audioInfo: sample_rate: %d / channels: %d / bits_per_sample: %d\n", (int)MixedOutput::inst.audioInfo().sample_rate, (int)MixedOutput::inst.audioInfo().channels, (int)MixedOutput::inst.audioInfo().bits_per_sample);
+    printf("New audioInfo: sample_rate: %d / channels: %d / bits_per_sample: %d\n", from.sample_rate, from.channels, from.bits_per_sample);
+    printf("FilePlayer audioInfo: sample_rate: %d / channels: %d / bits_per_sample: %d\n", info_.sample_rate, info_.channels, info_.bits_per_sample);
+    volume_.setAudioInfo(from);
+    outputBuffer_.setAudioInfo(from);
+    Mixer::inst.setAudioInfo(from);
+    info_ = from;
 }
 
 bool FilePlayer::playFile(const std::string& path) {
@@ -129,33 +155,29 @@ bool FilePlayer::playFile(const std::string& path) {
         wav_.begin();
         
         decoder_.setDecoder(&wav_);
-        decoder_.addNotifyAudioChange(*this);
+        decoder_.addNotifyAudioChange(FilePlayer::inst);
+        decoder_.begin();
+        copier_.begin(decoder_, audioFile_);
+        playing_ = true;
 #if defined(ONLY_FILE_PLAYER)
-        decoder_.setOutput(volume_);
         volume_.setOutput(mixerBuffer_);
         mixer_.begin(BUFFER_SIZE);
         decoder_.addNotifyAudioChange(sound1);
         decoder_.addNotifyAudioChange(sound2);
-        decoder_.addNotifyAudioChange(volume_);
         decoder_.addNotifyAudioChange(i2s_);
 #else
-        MixedOutput::inst.add(*this, weight());
-#endif
-        decoder_.begin();
-        copier_.begin(decoder_, audioFile_);
         //MixedOutput::inst.add(*this, weight());
-        playing_ = true;
+#endif
     } else if(path.rfind(".mp3") != std::string::npos) {
         mp3_.begin();
 
         decoder_.setDecoder(&mp3_);
-        decoder_.addNotifyAudioChange(*this);
 #if defined(ONLY_FILE_PLAYER)
         decoder_.setOutput(volume_);
         decoder_.addNotifyAudioChange(volume_);
         decoder_.addNotifyAudioChange(i2s_);
 #else
-        MixedOutput::inst.add(*this, weight());
+        //MixedOutput::inst.add(*this, weight());
 #endif
         decoder_.begin();
         copier_.begin(decoder_, audioFile_);
@@ -174,9 +196,9 @@ bool FilePlayer::playFile(const std::string& path) {
         decoder_.setOutput(volume_);
         decoder_.addNotifyAudioChange(volume_);
 #else
-        MixedOutput::inst.add(*this, weight());
+        //MixedOutput::inst.add(*this, weight());
 #endif
-        decoder_.begin(MixedOutput::inst.audioInfo());
+        decoder_.begin(Mixer::inst.audioInfo());
         copier_.begin(decoder_, urlStream_);
         playing_ = true;
     } else {

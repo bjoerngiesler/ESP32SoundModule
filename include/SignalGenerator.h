@@ -18,18 +18,25 @@ public:
     };
 
     static SignalGenerator inst;
-    void begin(float frequency, Waveform waveform);
-    void end();
+    void start(float frequency, Waveform waveform);
+    void step();
+    void stop();
 
-    Stream& output() override { return signalGeneratorStream_; }
+    virtual Stream& output() { return outputBuffer_; }
+    void setVolume(float vol) { volume_.setVolume(vol); }
 
 private:
     SignalGenerator();
 
-    FastSineGenerator<int16_t> sineGen_;
+    SineWaveGenerator<int16_t> sineGen_;
     SquareWaveGenerator<int16_t> squareGen_;
     SawToothGenerator<int16_t> sawtoothGen_;
     GeneratedSoundStream<int16_t> signalGeneratorStream_;
+
+    VolumeStream volume_;
+    BufferedStream outputBuffer_;
+
+    StreamCopy copier_;
 
     float frequency_ = 440.0f;
     Waveform waveform_ = SINE;

@@ -3,7 +3,8 @@
 #include "Settings.h"
 #include "FilePlayer.h"
 #include "SignalGenerator.h"
-#include "MixedOutput.h"
+#include "Mixer.h"
+#include "Player.h"
 #include "FileManager.h"
 #include "Configuration.h"
 #include "DFPHandler.h"
@@ -51,42 +52,49 @@ void startup() {
 
     FileManager::inst.buildFileMap();
     FileManager::inst.buildFolderMap();
-
+#if 0
 #if !defined(ONLY_FILE_PLAYER)
-    MixedOutput::inst.start(false);
+    Mixer::inst.start(false);
 #endif
 
     if(config.valueForKey("global", "signal_generator", false) == true) {
         Serial.println("Starting signal generator");
+
         float frequency = config.valueForKey("signal_generator", "frequency", 440.0f);
         std::string waveform = config.valueForKey("signal_generator", "waveform", "sine");
-        if(waveform == "square") SignalGenerator::inst.begin(frequency, SignalGenerator::SQUARE);
-        else if(waveform == "sawtooth") SignalGenerator::inst.begin(frequency, SignalGenerator::SAWTOOTH);
-        else SignalGenerator::inst.begin(frequency, SignalGenerator::SINE);
-        SignalGenerator::inst.setWeight(config.valueForKey("signal_generator", "weight", 100));
+        if(waveform == "square") SignalGenerator::inst.start(frequency, SignalGenerator::SQUARE);
+        else if(waveform == "sawtooth") SignalGenerator::inst.start(frequency, SignalGenerator::SAWTOOTH);
+        else SignalGenerator::inst.start(frequency, SignalGenerator::SINE);
+
+        SignalGenerator::inst.setVolume(config.valueForKey("signal_generator", "volume", .2f));
+        Mixer::inst.setInput(SignalGenerator::inst, MIXER_INPUT_SIGNALGENERATOR);
     }
 
     if(config.valueForKey("global", "file_player", true) == true) {
         Serial.println("Starting file player");
         FilePlayer::inst.start();
+
         if(initial && config.hasValue("global", "play_on_startup")) {
             FilePlayer::inst.playFile(config.valueForKey("global", "play_on_startup"));
         } else if(config.hasValue("global", "play_on_insert")) {
             FilePlayer::inst.playFile(config.valueForKey("global", "play_on_insert"));
         }
-        FilePlayer::inst.setWeight(config.valueForKey("file_player", "weight", 100));
+
+        FilePlayer::inst.setVolume(config.valueForKey("file_player", "volume", .5f));
+        Mixer::inst.setInput(FilePlayer::inst, MIXER_INPUT_FILEPLAYER);
     }
 
     // volume goes from 0 to 30 in config file for compatibility
-    float vol = config.valueForKey("global", "volume", 24)/30.0f;
-    MixedOutput::inst.setOutputVolume(constrain(vol, 0.0f, 1.0f));
+    float vol = config.valueForKey("global", "volume", 30)/30.0f;
+    Mixer::inst.setOutputVolume(constrain(vol, 0.0f, 1.0f));
+#endif
 
     initial = false;
 }
 
 void teardown(void) {
     // FIXME Read and store file for "play_on_remove"
-    MixedOutput::inst.stop();
+//    Mixer::inst.stop();
 
     if(WiFi.status() == WL_CONNECTED) {
         WiFi.disconnect();
@@ -99,11 +107,13 @@ void setup(void) {
     delay(3000);
     DFPHandler::inst.start();
 
-    AudioToolsLogger.begin(Serial, AudioToolsLogLevel::Error);
-
+#if 0
     if(FileManager::inst.isCardPresent()) {
         startup();
     }
+#endif
+
+    Player::inst.start();
 }
 
 void loop(void) {
@@ -121,11 +131,20 @@ void loop(void) {
         startup();
     }
 #endif
+#if 0
     // DFPHandler::inst.step();
     FilePlayer::inst.step();
 #if defined(ONLY_FILE_PLAYER)
 #else
-    MixedOutput::inst.step();
+    //printf("********** Step() in Signal Generator\n");
+    SignalGenerator::inst.step();
+    //printf("********** Step() in Mixer\n");
+    Mixer::inst.step();
+    //printf("********** Done for this loop\n");
 #endif
+#endif
+
+    Player::inst.step();
+
     vTaskDelay(1);
 }

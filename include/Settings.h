@@ -16,11 +16,15 @@ static const uint8_t P_CFG2     = A5;
 #define SAMPLE_RATE 44100
 #define NUM_CHANNELS 1
 #define BITS_PER_SAMPLE 16
-#define BUFFER_SIZE 1024
+#define AUDIO_BUFFER_SIZE 2048
+
+#define MIXER_INPUT_FILEPLAYER      0
+#define MIXER_INPUT_SIGNALGENERATOR 1
+#define NUM_MIXER_INPUTS            2
 
 static const AudioInfo DEFAULT_AUDIO_INFO = { SAMPLE_RATE, NUM_CHANNELS, BITS_PER_SAMPLE };
 
-#define ONLY_FILE_PLAYER
+//#define ONLY_FILE_PLAYER
 
 // D6: TX
 // D7: RX

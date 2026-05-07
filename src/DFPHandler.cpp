@@ -2,7 +2,7 @@
 #include "DFPHandler.h"
 #include "FilePlayer.h"
 #include "FileManager.h"
-#include "MixedOutput.h"
+#include "Mixer.h"
 
 DFPHandler DFPHandler::inst;
 
@@ -119,7 +119,7 @@ void DFPHandler::cmdSetVolume(const Command& cmd) {
     uint16_t volume = cmd.para1 << 8 | cmd.para2;
     printf("CMD: Set volume to %d\n", volume);
     float v = float(volume)/30.0f;
-    MixedOutput::inst.setOutputVolume(constrain(v, 0.0f, 1.0f));
+    Mixer::inst.setOutputVolume(constrain(v, 0.0f, 1.0f));
 }
 
 void DFPHandler::cmdStopPlayback(const Command& cmd) {

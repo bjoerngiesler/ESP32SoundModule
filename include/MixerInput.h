@@ -3,17 +3,18 @@
 
 #include <Arduino.h>
 #include <AudioTools.h>
+#include "Settings.h"
 
 class MixerInput {
 public:
     virtual Stream& output() = 0;
-    void setMixerIndex(int i) { mixerIndex_ = i; }
-    int mixerIndex() { return mixerIndex_; }
-    void setWeight(uint8_t w) { weight_ = w; }
-    uint8_t weight() { return weight_; }
+    virtual void setVolume(float vol) = 0;
+
+    void setActive(bool active=true) { active_ = active; }
+    bool isActive() { return active_; }
+
 protected:
-    int mixerIndex_ = 0;
-    uint8_t weight_ = 100;
+    bool active_ = false;
 };
 
 #endif // MIXERINPUT_H

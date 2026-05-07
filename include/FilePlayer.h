@@ -3,7 +3,7 @@
 
 #include "Settings.h"
 #include "MixerInput.h"
-#include "MixedOutput.h"
+#include "Mixer.h"
 #include <AudioTools.h>
 #include <AudioTools/Disk/AudioSourceSD.h>
 #include <AudioTools/CoreAudio/VolumeStream.h>
@@ -31,10 +31,11 @@ public:
     bool playFile(const std::string& path);
     void stopPlayback();
 
-    Stream& output() override { return decoder_; }
-
-    AudioInfo audioInfo() override { return MixedOutput::inst.audioInfo(); }
+    AudioInfo audioInfo() override { return info_; }
     void setAudioInfo(AudioInfo from) override;
+
+    virtual Stream& output() { return decoder_; }
+    void setVolume(float vol) { volume_.setVolume(vol); }
 
 protected:
     FilePlayer();
@@ -43,11 +44,12 @@ protected:
     MP3DecoderHelix mp3_;
     URLStreamESP32 urlStream_;
     EncodedAudioStream decoder_;
+    VolumeStream volume_;
+    BufferedStream outputBuffer_;
     StreamCopy copier_;
 
 #if defined(ONLY_FILE_PLAYER)
     I2SStream i2s_;
-    VolumeStream volume_;
     OutputMixer<int16_t> mixer_;
     StreamCopy mixerCopier1_, mixerCopier2_;
     BufferedStream mixerBuffer_;
@@ -55,6 +57,7 @@ protected:
 
     File audioFile_;
 
+    AudioInfo info_;
     bool playing_ = false;
 };
 
