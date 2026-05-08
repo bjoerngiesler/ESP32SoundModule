@@ -1,9 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include "Settings.h"
-#include "FilePlayer.h"
-#include "SignalGenerator.h"
-#include "Mixer.h"
 #include "Player.h"
 #include "FileManager.h"
 #include "Configuration.h"
@@ -18,12 +15,10 @@ bool initial = true;
 
 void startup() {
     Configuration config("/config.ini");
-#if 0
     printf("Read configuration:\n");
     printf("---------------\n");
     config.print();
     printf("---------------\n");
-#endif
 
     // FIXME Read and store file for "play_on_remove"
 #if 0
@@ -52,50 +47,28 @@ void startup() {
 
     FileManager::inst.buildFileMap();
     FileManager::inst.buildFolderMap();
-#if 0
-#if !defined(ONLY_FILE_PLAYER)
-    Mixer::inst.start(false);
-#endif
 
-    if(config.valueForKey("global", "signal_generator", false) == true) {
-        Serial.println("Starting signal generator");
+    Player::inst.setSignalGeneratorFrequency(config.valueForKey("signal_generator", "frequency", 440.0f));
+    Player::inst.setSignalGeneratorVolume(config.valueForKey("signal_generator", "volume", 0.0f));
+    std::string waveform = config.valueForKey("signal_generator", "waveform", "sine");
+    if(waveform == "square") Player::inst.setSignalGeneratorWaveform(Player::SQUARE);
+    else if(waveform == "sawtooth" || waveform == "saw") Player::inst.setSignalGeneratorWaveform(Player::SAWTOOTH);
+    else Player::inst.setSignalGeneratorWaveform(Player::SINE);
 
-        float frequency = config.valueForKey("signal_generator", "frequency", 440.0f);
-        std::string waveform = config.valueForKey("signal_generator", "waveform", "sine");
-        if(waveform == "square") SignalGenerator::inst.start(frequency, SignalGenerator::SQUARE);
-        else if(waveform == "sawtooth") SignalGenerator::inst.start(frequency, SignalGenerator::SAWTOOTH);
-        else SignalGenerator::inst.start(frequency, SignalGenerator::SINE);
-
-        SignalGenerator::inst.setVolume(config.valueForKey("signal_generator", "volume", .2f));
-        Mixer::inst.setInput(SignalGenerator::inst, MIXER_INPUT_SIGNALGENERATOR);
+    Player::inst.setFileVolume(config.valueForKey("file_player", "volume", 1.0f));
+    if(initial && config.hasValue("global", "play_on_startup")) {
+        Player::inst.playFile(config.valueForKey("global", "play_on_startup"));
+    } else if(config.hasValue("global", "play_on_insert")) {
+        Player::inst.playFile(config.valueForKey("global", "play_on_insert"));
     }
 
-    if(config.valueForKey("global", "file_player", true) == true) {
-        Serial.println("Starting file player");
-        FilePlayer::inst.start();
-
-        if(initial && config.hasValue("global", "play_on_startup")) {
-            FilePlayer::inst.playFile(config.valueForKey("global", "play_on_startup"));
-        } else if(config.hasValue("global", "play_on_insert")) {
-            FilePlayer::inst.playFile(config.valueForKey("global", "play_on_insert"));
-        }
-
-        FilePlayer::inst.setVolume(config.valueForKey("file_player", "volume", .5f));
-        Mixer::inst.setInput(FilePlayer::inst, MIXER_INPUT_FILEPLAYER);
-    }
-
-    // volume goes from 0 to 30 in config file for compatibility
-    float vol = config.valueForKey("global", "volume", 30)/30.0f;
-    Mixer::inst.setOutputVolume(constrain(vol, 0.0f, 1.0f));
-#endif
+    Player::inst.setOutputVolume(config.valueForKey("global", "volume", 1.0f));
 
     initial = false;
 }
 
 void teardown(void) {
-    // FIXME Read and store file for "play_on_remove"
-//    Mixer::inst.stop();
-
+    // FIXME Play stored file for "play_on_remove" here
     if(WiFi.status() == WL_CONNECTED) {
         WiFi.disconnect();
     }
@@ -105,19 +78,17 @@ void setup(void) {
     Serial.begin(2000000);
     while(!Serial) delay(10);
     delay(3000);
-    DFPHandler::inst.start();
 
-#if 0
+    FileManager::inst.start();
+    DFPHandler::inst.start();
+    Player::inst.start();
+
     if(FileManager::inst.isCardPresent()) {
         startup();
     }
-#endif
-
-    Player::inst.start();
 }
 
-void loop(void) {
-#if 0
+void checkSDCard() {
     static bool cardPresent = FileManager::inst.isCardPresent();
 
     if(cardPresent && !FileManager::inst.isCardPresent()) {
@@ -130,19 +101,14 @@ void loop(void) {
         cardPresent = true;
         startup();
     }
-#endif
-#if 0
-    // DFPHandler::inst.step();
-    FilePlayer::inst.step();
-#if defined(ONLY_FILE_PLAYER)
-#else
-    //printf("********** Step() in Signal Generator\n");
-    SignalGenerator::inst.step();
-    //printf("********** Step() in Mixer\n");
-    Mixer::inst.step();
-    //printf("********** Done for this loop\n");
-#endif
-#endif
+}
+
+void loop(void) {
+    static unsigned long lastCheckTime = millis();
+    if(millis() - lastCheckTime > 1000) {
+        checkSDCard();
+        lastCheckTime = millis();
+    }
 
     Player::inst.step();
 

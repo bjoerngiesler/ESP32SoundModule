@@ -1,8 +1,13 @@
 #if !defined(PLAYER_H)
 #define PLAYER_H
 
+#include <string>
 #include <Arduino.h>
 #include <AudioTools.h>
+#include <AudioTools/Disk/AudioSourceSD.h>
+#include <AudioTools/AudioCodecs/CodecWAV.h>
+#include <AudioTools/AudioCodecs/CodecMP3Helix.h>
+#include <AudioTools/Communication/HTTP/URLStreamESP32.h>
 #include "Settings.h"
 
 // Pipeline setup:
@@ -11,9 +16,6 @@
 //   Output pipeline:
 //       Mixer -> VolumeStream -> VolumeMeter -> I2SStream
 
-#define MEASURE_THROUGHPUT
-#define AUDIO_TOOLS_LOG_LEVEL AudioToolsLogLevel::Warning
-#define NUM_MIXER_CHANNELS 1
 
 class Player: public AudioInfoSupport {
 public:
@@ -35,7 +37,16 @@ public:
     // Accessing the signal generator
     void setSignalGeneratorWaveform(Waveform wf);
     void setSignalGeneratorFrequency(float freq);
-    void setSignalGeneratorVolume(float vol) { sigGenVolume_.setVolume(vol); }
+    void setSignalGeneratorVolume(float vol);
+
+    // Accessing the file player
+    bool playFile(const std::string& path);
+    void stopPlayback() { playing_ = false; }
+    void setFileVolume(float vol) { fileVolume_.setVolume(vol); }
+
+    // Controlling the overall volume
+    void setOutputVolume(float vol) { mixerVolume_.setVolume(vol); }
+    float measuredOutputVolume() { return volumeMeter_.volumeRatio(); }
 
 protected:
     Player();
@@ -44,14 +55,24 @@ protected:
     // Signal generators and streams
     SineFromTable<int16_t> sineGen_;
     SquareWaveGenerator<int16_t> squareGen_;
-    SawToothGenerator<int16_t> sawtoothGen_;
+    SawToothGenerator<int16_t> sawGen_;
     GeneratedSoundStream<int16_t> sigGenStream_;
-    VolumeStream sigGenVolume_;
+
+    // File decoders and streams
+    WAVDecoder wav_;
+    MP3DecoderHelix mp3_;
+    URLStreamESP32 urlStream_;
+
+    EncodedAudioStream fileDecoder_;
+    BufferedStream fileBuffer_;
+    VolumeStream fileVolume_;
+    StreamCopy fileCopier_;
 
     InputMixer<int16_t> mixer_;
     VolumeStream mixerVolume_;
     VolumeMeter volumeMeter_;
-    StreamCopy mixerCopiers_[NUM_MIXER_CHANNELS];
+
+    CsvOutput<int16_t> csv_;
 
 #if defined(MEASURE_THROUGHPUT)
     MeasuringStream meas_;
@@ -60,7 +81,8 @@ protected:
 
     I2SStream i2s_;    
 
-    bool running_ = false;
+    bool running_ = false, playing_ = false;
+    File audioFile_;
 };
 
 #endif // PLAYER_H

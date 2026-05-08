@@ -1,8 +1,7 @@
 #include <Arduino.h>
 #include "DFPHandler.h"
-#include "FilePlayer.h"
+#include "Player.h"
 #include "FileManager.h"
-#include "Mixer.h"
 
 DFPHandler DFPHandler::inst;
 
@@ -119,16 +118,16 @@ void DFPHandler::cmdSetVolume(const Command& cmd) {
     uint16_t volume = cmd.para1 << 8 | cmd.para2;
     printf("CMD: Set volume to %d\n", volume);
     float v = float(volume)/30.0f;
-    Mixer::inst.setOutputVolume(constrain(v, 0.0f, 1.0f));
+    Player::inst.setOutputVolume(constrain(v, 0.0f, 1.0f));
 }
 
 void DFPHandler::cmdStopPlayback(const Command& cmd) {
     printf("CMD: Stop playback\n");
-    FilePlayer::inst.stopPlayback();
+    Player::inst.stopPlayback();
 }
 
 void DFPHandler::cmdPlayFolder(const Command& cmd) {
     std::string filename = FileManager::inst.filename(cmd.para1, cmd.para2);
     printf("CMD: Play folder %d file %d => '%s'\n", cmd.para1, cmd.para2, filename.c_str());
-    if(filename != "") FilePlayer::inst.playFile(filename);
+    if(filename != "") Player::inst.playFile(filename);
 }

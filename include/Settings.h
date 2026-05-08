@@ -13,14 +13,14 @@ static const uint8_t P_I2S_BCK      = 4;
 static const uint8_t P_CFG1     = A4;
 static const uint8_t P_CFG2     = A5;
 
-#define SAMPLE_RATE 44100
+#define SAMPLE_RATE 22050
 #define NUM_CHANNELS 1
 #define BITS_PER_SAMPLE 16
-#define AUDIO_BUFFER_SIZE 2048
+#define AUDIO_BUFFER_SIZE 1024
 
-#define MIXER_INPUT_FILEPLAYER      0
-#define MIXER_INPUT_SIGNALGENERATOR 1
-#define NUM_MIXER_INPUTS            2
+#define MEASURE_THROUGHPUT
+//#define OUTPUT_CSV
+#define AUDIO_TOOLS_LOG_LEVEL AudioToolsLogLevel::Error
 
 static const AudioInfo DEFAULT_AUDIO_INFO = { SAMPLE_RATE, NUM_CHANNELS, BITS_PER_SAMPLE };
 
