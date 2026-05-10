@@ -1,5 +1,6 @@
 #include "Player.h"
 #include "Settings.h"
+#include "FileManager.h"
 
 Player Player::inst;
 
@@ -17,19 +18,30 @@ Player::Player():
 #if defined(MEASURE_THROUGHPUT)
     meas_(20, &Serial),
 #endif
-    fileCopier_(AUDIO_BUFFER_SIZE),
-    finalCopier_(AUDIO_BUFFER_SIZE),
-    fileBuffer_(16*AUDIO_BUFFER_SIZE)
+    fileBuffer_(2*AUDIO_BUFFER_SIZE),
+    finalCopier_(AUDIO_BUFFER_SIZE)
 {
     pinMode(LED_BUILTIN, OUTPUT);
 }
 
-bool Player::start() {
+Result Player::initialize() {
+    addCommand("play", "<filename>|<num>|<folder_num> <file_num>: Play the given filename or numbered file", 
+               [](const std::vector<String>& words, ConsoleStream *stream)->Result { return Player::inst.playCmd(words, stream); }, 1, 2);
+    addCommand("siggen", "on|off|sine|square|saw|volume <num>: Control the signal generator", 
+               [](const std::vector<String>& words, ConsoleStream *stream)->Result { return Player::inst.sigGenCmd(words, stream); }, 1, 2);
+    addCommand("ls", "<path>: Print a list of files in <path>", 
+               [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.lsCmd(words, stream); }, 1, 1);
+    addCommand("cat", "<file>: Print contents of <file>", 
+               [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.catCmd(words, stream); }, 1, 1);
+    return Subsystem::initialize("player", "Main Player subsystem", "");
+}
+
+Result Player::start(ConsoleStream *stream) {
     pinMode(P_I2S_BCK, OUTPUT);
     pinMode(P_I2S_DATA_OUT, OUTPUT);
     pinMode(P_I2S_WS, OUTPUT);
 
-    AudioToolsLogger.begin(Serial, AUDIO_TOOLS_LOG_LEVEL);
+    //AudioToolsLogger.begin(Serial, AUDIO_TOOLS_LOG_LEVEL);
 
     // set up signal path back to front.
     // i2s_ takes its data from finalCopier_ => no stream connection.
@@ -47,13 +59,21 @@ bool Player::start() {
     volumeMeter_.setStream(mixerVolume_);
     mixerVolume_.setStream(mixer_);
 
-    mixer_.add(sigGenStream_);
-    mixer_.add(fileBuffer_);
-
     sigGenStream_.setInput(sineGen_);
 
-    fileDecoder_.setOutput(fileVolume_);
-    fileVolume_.setOutput(fileBuffer_);
+    silentSquare_.setAmplitude(0);
+    silenceStream_.setInput(silentSquare_);
+
+#if defined(EFFECTS)    
+    fileEffects_.setStream(silenceStream_);
+    fileEffects_.addEffect(delay_);
+
+    fileVolume_.setStream(fileEffects_);
+#else
+    //fileBuffer_.setStream(fileDecoder_);
+    fileVolume_.setStream(silenceStream_);
+#endif
+    //fileMixerIndex_ = mixer_.add(fileVolume_);
 
     fileDecoder_.addNotifyAudioChange(*this);
 
@@ -67,48 +87,52 @@ bool Player::start() {
     mixerVolume_.begin(info_);
     mixer_.begin(info_);
     sigGenStream_.begin(info_);
+    silenceStream_.begin(info_);
+    silentSquare_.begin(info_);
+#if defined(EFFECTS)
+    fileEffects_.begin(info_);
+#endif
+    fileBuffer_.begin();
     fileVolume_.begin(info_);
     fileDecoder_.begin(info_);
-    fileBuffer_.begin();
 
     sineGen_.begin(info_, N_B5);
     sineGen_.setMaxAmplitudeStep(float(1<<(BITS_PER_SAMPLE-1)));
-    sineGen_.setAmplitude(0);
     sawGen_.begin(info_, N_B5);
-    sawGen_.setAmplitude(0);
     squareGen_.begin(info_, N_B5);
-    squareGen_.setAmplitude(0);
 
-    return true;
+    return Subsystem::start();
 }
 
-bool Player::step() {
+Result Player::step() {
     size_t bytesCopied;
-    if(playing_) {
-        bytesCopied = fileCopier_.copy();
-        LOGI("Player::step(): fileCopier copied %d bytes", bytesCopied);
-        LOGI("Player::step(): decoder has %d bytes available for read and %d for write", fileDecoder_.available(), fileDecoder_.availableForWrite());
-#if 0
-        if(bytesCopied == 0) {
-            LOGI("Player::step(): fileCopier finished playing");
-            fileCopier_.end();
-            playing_ = false;
-            audioFile_.close();
-        }
-#endif
-    }
     bytesCopied = finalCopier_.copy();
     LOGI("Player::step(): finalCopier copied %d bytes", bytesCopied);
     float vol = volumeMeter_.volumeRatio();
     analogWrite(LED_BUILTIN, (1-vol)*255);
-    LOGD("Volume: %f", vol);
+    //printf("Volume: %f\n", vol);
 
-    return true;
+    if(isPlaying()) {
+        bb::printf("Audio file available: %d\n", audioFile_.available());
+        if(audioFile_.available() == 0) {
+            stopPlayback();
+        }
+    }
+
+    bb::Runloop::runloop.excuseOverrun();
+    return RES_OK;
 }
 
-bool Player::stop() {
-    running_ = false;
-    return true;
+Result Player::stop(ConsoleStream *stream) {
+    return RES_OK;
+}
+
+Result Player::handleConsoleCommand(const std::vector<String>& words, ConsoleStream *stream) {
+    if(words[0] == "play") {
+
+    }
+
+    return Subsystem::handleConsoleCommand(words, stream);
 }
 
 void Player::setAudioInfo(AudioInfo from) {
@@ -118,6 +142,10 @@ void Player::setAudioInfo(AudioInfo from) {
     sawGen_.setAudioInfo(from);
     sigGenStream_.setAudioInfo(from);
 
+    silenceStream_.setAudioInfo(from);
+#if defined(EFFECTS)
+    fileEffects_.setAudioInfo(from);
+#endif
     fileVolume_.setAudioInfo(from);
     fileBuffer_.setAudioInfo(from);
 
@@ -129,7 +157,21 @@ void Player::setAudioInfo(AudioInfo from) {
 #endif
     i2s_.setAudioInfo(from);
 
+    setSignalGeneratorVolume(sigGenVolume_);
+
     info_ = from;
+}
+
+void Player::setSignalGeneratorEnabled(bool yn) {
+    if(yn == false && signalMixerIndex_ >= 0) {
+        bb::printf("Disabling signal generator.\n");
+        mixer_.remove(signalMixerIndex_);
+        signalMixerIndex_ = -1;
+    } else if(yn == true && signalMixerIndex_ < 0) {
+        bb::printf("Enabling signal generator.\n");
+        signalMixerIndex_ = mixer_.add(sigGenStream_);
+        sigGenStream_.begin();
+    }
 }
 
 void Player::setSignalGeneratorWaveform(Waveform wf) {
@@ -154,9 +196,14 @@ void Player::setSignalGeneratorFrequency(float freq) {
 }
 
 void Player::setSignalGeneratorVolume(float volume) {
-    sineGen_.setAmplitude(volume);
-    squareGen_.setAmplitude(volume);
-    sawGen_.setAmplitude(volume);
+    sigGenVolume_ = volume;                   // input is 0..1
+    float amplitude = volume * ((1<<(info_.bits_per_sample-1))-1); // but actual amplitude is -INT16_MAX..INT16_MAX or whatever
+
+    bb::printf("Setting signal generator amplitude to %f.\n", amplitude);
+
+    sineGen_.setAmplitude(amplitude);
+    squareGen_.setAmplitude(amplitude);
+    sawGen_.setAmplitude(amplitude);
 }
 
 bool Player::playFile(const std::string& path) {
@@ -166,36 +213,131 @@ bool Player::playFile(const std::string& path) {
         LOGE("Failed to open file '%s'\n", p.c_str());
         return false;
     }
-    LOGW("Playing file '%s'\n", p.c_str());
+    bb::printf("Playing file '%s'\n", p.c_str());
     if(path.rfind(".wav") != std::string::npos) {
         wav_.begin();
         fileDecoder_.setDecoder(&wav_);
-        fileCopier_.begin(fileDecoder_, audioFile_);
-
-        playing_ = true;
+        fileDecoder_.setStream(audioFile_);
+#if defined(EFFECTS)
+        fileEffects_.setStream(fileDecoder_);
+#endif
+        fileVolume_.setStream(fileDecoder_);
+        fileDecoder_.begin();
+        fileMixerIndex_ = mixer_.add(fileVolume_);
+        bb::printf("Mixer index assigned: %d\n", fileMixerIndex_);
     } else if(path.rfind(".mp3") != std::string::npos) {
         mp3_.begin();
         fileDecoder_.setDecoder(&mp3_);
-        fileCopier_.begin(fileDecoder_, audioFile_);
-
-        playing_ = true;
+        fileDecoder_.setStream(audioFile_);
+#if defined(EFFECTS)
+        fileEffects_.setStream(fileDecoder_);
+#endif
+        fileVolume_.setStream(fileDecoder_);
+        fileDecoder_.begin();
+        fileMixerIndex_ = mixer_.add(fileVolume_);
+        bb::printf("Mixer index assigned: %d\n", fileMixerIndex_);
     } else if(path.rfind(".stream") != std::string::npos) {
         std::string url = audioFile_.readString().c_str();
         while(url.length() > 0 && (url.back() == '\n' || url.back() == '\r')) url.pop_back(); // Trim trailing newlines
-        Serial.printf("Streaming from URL: '%s'\n", url.c_str());
-        mp3_.begin();
+        bb::printf("Streaming from URL: '%s'\n", url.c_str());
         urlStream_.begin(url.c_str(), "audio/mp3");
 
+        mp3_.begin();
         fileDecoder_.setDecoder(&mp3_);
-        fileCopier_.begin(fileDecoder_, urlStream_);
-
-        playing_ = true;
+        fileDecoder_.setStream(urlStream_);
+#if defined(EFFECTS)
+        fileEffects_.setStream(fileDecoder_);
+#endif
+        fileVolume_.setStream(fileDecoder_);
+        fileDecoder_.begin();
+        fileMixerIndex_ = mixer_.add(fileVolume_);
+        bb::printf("Mixer index assigned: %d\n", fileMixerIndex_);
     } else {
         Serial.println("Unsupported file type");
         audioFile_.close();
-        playing_ = false;
         return false;
     }
 
     return true;
+}
+
+void Player::stopPlayback() {
+#if defined(EFFECTS)
+    fileEffects_.setStream(silenceStream_);
+#endif
+    fileVolume_.setStream(silenceStream_);
+    fileDecoder_.end();
+    if(fileMixerIndex_ < 0) return; // not playing
+    bb::printf("Removing file mixer index %d from mixer\n", fileMixerIndex_);
+    mixer_.remove(fileMixerIndex_);
+    bb::printf("Mixer channels now: %d\n", mixer_.size());
+    fileMixerIndex_ = -1;
+}
+    
+bool Player::isPlaying() {
+    if(fileMixerIndex_ < 0) return false;
+    return true;
+}
+
+Result Player::playCmd(const std::vector<String>& args, ConsoleStream *stream) {
+    if(args.size() == 1) {
+        if(FileManager::inst.fileExists(args[0].c_str())) {
+            if(playFile(args[0].c_str())) return RES_OK;
+            return RES_SUBSYS_RESOURCE_NOT_AVAILABLE;
+        }
+        
+        bb::printf("Not a file - trying to play '%s' as a number\n", args[0].c_str());
+        std::string filename = FileManager::inst.filename(unsigned(args[0].toInt()));
+        if(filename != "") {
+            bb::printf("Resolved to '%s'\n", filename.c_str());
+            if(playFile(filename)) return RES_OK;
+        }
+        return RES_SUBSYS_RESOURCE_NOT_AVAILABLE;
+    } else if(args.size() == 2) {
+        std::string filename = FileManager::inst.filename(unsigned(args[0].toInt()), unsigned(args[1].toInt()));
+        if(filename != "") {
+            bb::printf("Resolved to '%s'\n", filename.c_str());
+            if(playFile(filename)) return RES_OK;
+        }
+        return RES_SUBSYS_RESOURCE_NOT_AVAILABLE;
+    }
+
+    return RES_CMD_FAILURE;
+}
+
+Result Player::sigGenCmd(const std::vector<String>& args, ConsoleStream *stream) {
+    if(args.size() == 1) {
+        if(args[0] == "on") {
+            setSignalGeneratorEnabled(true);
+            return RES_OK;
+        } else if(args[0] == "off") {
+            setSignalGeneratorEnabled(false);
+            return RES_OK;
+        } else if(args[0] == "sine") {
+            setSignalGeneratorWaveform(SINE);
+            setSignalGeneratorEnabled(true);
+            return RES_OK;
+        }
+        else if(args[0] == "square") {
+            setSignalGeneratorWaveform(SQUARE);
+            setSignalGeneratorEnabled(true);
+            return RES_OK;
+        }
+        else if(args[0] == "saw") {
+            setSignalGeneratorWaveform(SAWTOOTH);
+            setSignalGeneratorEnabled(true);
+            return RES_OK;
+        }
+        
+        return RES_CMD_INVALID_ARGUMENT;
+    }
+
+    if(args.size() == 2) {
+        if(args[0] != "volume") return RES_CMD_INVALID_ARGUMENT;
+        setSignalGeneratorVolume(args[1].toFloat());
+        setSignalGeneratorEnabled(true);
+        return RES_OK;
+    }
+
+    return RES_CMD_INVALID_ARGUMENT;
 }

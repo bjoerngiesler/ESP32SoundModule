@@ -16,9 +16,9 @@ static const uint8_t P_CFG2     = A5;
 #define SAMPLE_RATE 22050
 #define NUM_CHANNELS 1
 #define BITS_PER_SAMPLE 16
-#define AUDIO_BUFFER_SIZE 1024
+#define AUDIO_BUFFER_SIZE 2048
 
-#define MEASURE_THROUGHPUT
+//#define MEASURE_THROUGHPUT
 //#define OUTPUT_CSV
 #define AUDIO_TOOLS_LOG_LEVEL AudioToolsLogLevel::Error
 

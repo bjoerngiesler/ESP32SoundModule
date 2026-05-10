@@ -24,7 +24,7 @@ bool Configuration::readFromFile(const std::string& filename) {
         if(line[0] == '[' && line[line.length()-1] == ']') {
             std::string sectionName = line.substr(1, line.length()-2);
             if(sectionName.length() == 0) {
-                printf("Invalid section name: '%s'\n", line.c_str());
+                bb::printf("Invalid section name: '%s'\n", line.c_str());
                 continue; // Invalid section name
             }
             sections_[currentSectionName] = currentSection;
@@ -69,9 +69,9 @@ bool Configuration::readFromFile(const std::string& filename) {
 
 void Configuration::print() {
     for(const auto& section : sections_) {
-        printf("[%s]\n", section.first.c_str());
+        bb::printf("[%s]\n", section.first.c_str());
         for(const auto& kv : section.second) {
-            printf("%s=%s\n", kv.first.c_str(), kv.second.c_str());
+            bb::printf("%s=%s\n", kv.first.c_str(), kv.second.c_str());
         }
     }
 }
@@ -112,7 +112,7 @@ float Configuration::valueForKey(const std::string& section, const std::string& 
     
     float var;
     if(sscanf(keyIt->second.c_str(), "%f", &var) != 1) {
-        printf("Could not convert value '%s' for key '[%s]:%s to float. Returning default %f.", 
+        bb::printf("Could not convert value '%s' for key '[%s]:%s to float. Returning default %f.", 
                keyIt->second.c_str(), section.c_str(), key.c_str(), defaultValue);
         return defaultValue;
     }
@@ -127,7 +127,7 @@ int Configuration::valueForKey(const std::string& section, const std::string& ke
     
     int var;
     if(sscanf(keyIt->second.c_str(), "%d", &var) != 1) {
-        printf("Could not convert value '%s' for key '[%s]:%s to int. Returning default %d.", 
+        bb::printf("Could not convert value '%s' for key '[%s]:%s to int. Returning default %d.", 
                keyIt->second.c_str(), section.c_str(), key.c_str(), defaultValue);
         return defaultValue;
     }
@@ -144,7 +144,7 @@ bool Configuration::valueForKey(const std::string& section, const std::string& k
     std::transform(val.begin(), val.end(), val.begin(), [](unsigned char c){return std::tolower(c);});
     if(val == "true" || val == "on" || val == "yes") return true;
     if(val == "false" || val == "off" || val == "no") return false;
-    printf("Could not convert value '%s' for key '[%s]:%s to bool. Returning default %s.", 
+    bb::printf("Could not convert value '%s' for key '[%s]:%s to bool. Returning default %s.", 
             keyIt->second.c_str(), section.c_str(), key.c_str(), defaultValue ? "true" : "false");
     return defaultValue;
 }

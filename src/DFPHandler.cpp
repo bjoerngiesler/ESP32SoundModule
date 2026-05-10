@@ -1,37 +1,48 @@
 #include <Arduino.h>
+#include <LibBB.h>
 #include "DFPHandler.h"
 #include "Player.h"
 #include "FileManager.h"
 
 DFPHandler DFPHandler::inst;
 
-std::map<CommandCode, std::function<void(const Command& cmd)>> DFPHandler::callbackMap_ = {
-    { CMD_RESET, [](const Command& cmd)->void { DFPHandler::inst.cmdReset(cmd); }},
-    { CMD_VOLUME, [](const Command& cmd)->void { DFPHandler::inst.cmdSetVolume(cmd); }},
-    { CMD_STOP, [](const Command& cmd)->void { DFPHandler::inst.cmdStopPlayback(cmd); }},
-    { CMD_PLAY_FOLDER, [](const Command& cmd)->void { DFPHandler::inst.cmdPlayFolder(cmd); }}
+std::map<DFPCmdCode, std::function<void(const DFPCmd& cmd)>> DFPHandler::callbackMap_ = {
+    { CMD_RESET, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdReset(cmd); }},
+    { CMD_VOLUME, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdSetVolume(cmd); }},
+    { CMD_STOP, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdStopPlayback(cmd); }},
+    { CMD_PLAY_FOLDER, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdPlayFolder(cmd); }}
 };
 
-
-bool DFPHandler::start() {
-    Serial1.begin(9600, SERIAL_8N1, RX, TX);
-    return true;
+bb::Result DFPHandler::initialize() {
+    return Subsystem::initialize("dfp", "DFP Protocol Handler", "");
 }
 
-bool DFPHandler::step() {
-    Command cmd;
-    if(readCommand(cmd, 1) == false)  return false;
-    printf("Command: %02x Para1: %0x Para2: %0x Wants feedback: %d\n", cmd.cmd, cmd.para1, cmd.para2, cmd.feedback);
+Result DFPHandler::start(ConsoleStream* stream) {
+    Serial1.begin(bps_, SERIAL_8N1, RX, TX);
+    return Subsystem::start(stream);;
+}
+
+Result DFPHandler::step() {
+    DFPCmd cmd;
+    if(readDFPCmd(cmd, 1) == false) return RES_SUBSYS_COMM_ERROR;
+    //bb::printf("DFPCmd: %02x Para1: %0x Para2: %0x Wants feedback: %d\n", cmd.cmd, cmd.para1, cmd.para2, cmd.feedback);
     if(callbackMap_.find(cmd.cmd) != callbackMap_.end()) {
         callbackMap_[cmd.cmd](cmd);
-        return true;
+        return RES_OK;
     } 
-    printf("Unknown / unhandled command 0x%02x\n", cmd.cmd);
-    return false;
+    bb::printf("Unknown / unhandled DFPCmd 0x%02x\n", cmd.cmd);
+    return RES_SUBSYS_COMM_ERROR;
 }
 
-bool DFPHandler::stop() {
-    return true;
+Result DFPHandler::stop(ConsoleStream *stream) {
+    return Subsystem::stop(stream);
+}
+
+Result DFPHandler::setBps(unsigned int bps) {
+    if(bps_ == bps) return RES_OK;
+    Serial1.begin(bps);
+    bps_ = bps;
+    return RES_OK;
 }
 
 bool DFPHandler::waitAvailable(unsigned int timeout, uint8_t& byte) {
@@ -46,7 +57,7 @@ bool DFPHandler::waitAvailable(unsigned int timeout, uint8_t& byte) {
     return true;
 }
 
-bool DFPHandler::readCommand(Command& command, unsigned int timeout) {
+bool DFPHandler::readDFPCmd(DFPCmd& DFPCmd, unsigned int timeout) {
     uint8_t sync, ver, len, cmd, feedback, para1, para2, checksum;
 
     // sync
@@ -83,51 +94,51 @@ bool DFPHandler::readCommand(Command& command, unsigned int timeout) {
     }
 
     if(len != 6) {
-        printf("Unknown length\n");
+        bb::printf("Unknown length\n");
         delete[] buf;
         return false;
     }
 
-    command.version = ver;
-    command.cmd = (CommandCode)buf[0];
-    command.feedback = buf[1]>0;
-    command.para1 = buf[2];
-    command.para2 = buf[3];
-    command.checksum = buf[4] << 8 | buf[5];
-    if(checkChecksum(command) == false) {
-        printf("Checksum error -- should be 0x%0x but is 0x%0x\n", calcChecksum(command), command.checksum);
+    DFPCmd.version = ver;
+    DFPCmd.cmd = (DFPCmdCode)buf[0];
+    DFPCmd.feedback = buf[1]>0;
+    DFPCmd.para1 = buf[2];
+    DFPCmd.para2 = buf[3];
+    DFPCmd.checksum = buf[4] << 8 | buf[5];
+    if(checkChecksum(DFPCmd) == false) {
+        bb::printf("Checksum error -- should be 0x%0x but is 0x%0x\n", calcChecksum(DFPCmd), DFPCmd.checksum);
         return false;
     } 
 
     return true;
 }
 
-uint16_t DFPHandler::calcChecksum(const Command& cmd) {
+uint16_t DFPHandler::calcChecksum(const DFPCmd& cmd) {
     return 1 + (0xffff - (cmd.version  + 6 + cmd.cmd + cmd.feedback + cmd.para1 + cmd.para2));
 }
 
-bool DFPHandler::checkChecksum(const Command& cmd) {
+bool DFPHandler::checkChecksum(const DFPCmd& cmd) {
     return calcChecksum(cmd) == cmd.checksum;
 }
 
-void DFPHandler::cmdReset(const Command& cmd) {
-    printf("CMD: Reset!\n");
+void DFPHandler::cmdReset(const DFPCmd& cmd) {
+    bb::printf("CMD: Reset!\n");
 }
 
-void DFPHandler::cmdSetVolume(const Command& cmd) {
+void DFPHandler::cmdSetVolume(const DFPCmd& cmd) {
     uint16_t volume = cmd.para1 << 8 | cmd.para2;
-    printf("CMD: Set volume to %d\n", volume);
+    bb::printf("CMD: Set volume to %d\n", volume);
     float v = float(volume)/30.0f;
     Player::inst.setOutputVolume(constrain(v, 0.0f, 1.0f));
 }
 
-void DFPHandler::cmdStopPlayback(const Command& cmd) {
-    printf("CMD: Stop playback\n");
+void DFPHandler::cmdStopPlayback(const DFPCmd& cmd) {
+    bb::printf("CMD: Stop playback\n");
     Player::inst.stopPlayback();
 }
 
-void DFPHandler::cmdPlayFolder(const Command& cmd) {
+void DFPHandler::cmdPlayFolder(const DFPCmd& cmd) {
     std::string filename = FileManager::inst.filename(cmd.para1, cmd.para2);
-    printf("CMD: Play folder %d file %d => '%s'\n", cmd.para1, cmd.para2, filename.c_str());
+    bb::printf("CMD: Play folder %d file %d => '%s'\n", cmd.para1, cmd.para2, filename.c_str());
     if(filename != "") Player::inst.playFile(filename);
 }

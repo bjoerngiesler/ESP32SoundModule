@@ -6,8 +6,10 @@
 #include <SD_MMC.h>
 #include <SPI.h>
 #include <SD.h>
+#include <LibBB.h>
 
 using namespace fs;
+using namespace bb;
 
 class FileManager {
 public:
@@ -54,6 +56,11 @@ public:
     void setFileIndexingMode(FileIndexingMode mode) { indexingMode_ = mode; }
     void setIgnoreDotfiles(bool ignore) { ignoreDotfiles_ = ignore; }
     void setIgnoreNonNumeric(bool ignore) { ignoreNonNumeric_ = ignore; }
+
+    bool fileExists(const std::string& path);
+
+    Result lsCmd(const std::vector<String>& args, ConsoleStream *stream);
+    Result catCmd(const std::vector<String>& args, ConsoleStream *stream);
 
 protected:
     FileManager();

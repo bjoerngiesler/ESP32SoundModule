@@ -1,11 +1,12 @@
 #if !defined(DFPHANDLER_H)
 #define DFPHANDLER_H
 
+#include <LibBB.h>
 #include <sys/types.h>
 #include <map>
 #include <functional>
 
-enum CommandCode {
+enum DFPCmdCode {
     CMD_NEXT             = 0x01,
     CMD_PREV             = 0x02,
     CMD_PLAY             = 0x03,
@@ -79,32 +80,39 @@ enum PlaySource {
     SRC_FLASH = 5
 };
 
-struct Command {
+struct DFPCmd {
     uint8_t version;
-    CommandCode cmd;
+    DFPCmdCode cmd;
     bool feedback;
     uint8_t para1, para2;
     uint16_t checksum;
 };
 
-class DFPHandler {
+using namespace bb;
+
+class DFPHandler: public Subsystem {
 public:
     static DFPHandler inst;
 
-    bool start();
-    bool step();
-    bool stop();
+    Result initialize();
+    Result start(ConsoleStream* stream = nullptr);
+    Result step();
+    Result stop(ConsoleStream *stream = nullptr);
 
-    void cmdReset(const Command& cmd);
-    void cmdSetVolume(const Command& cmd);
-    void cmdStopPlayback(const Command& cmd);
-    void cmdPlayFolder(const Command& cmd);
+    Result setBps(unsigned int bps);
+
+    void cmdReset(const DFPCmd& cmd);
+    void cmdSetVolume(const DFPCmd& cmd);
+    void cmdStopPlayback(const DFPCmd& cmd);
+    void cmdPlayFolder(const DFPCmd& cmd);
 protected:
-    static std::map<CommandCode, std::function<void(const Command& cmd)>> callbackMap_;
+    static std::map<DFPCmdCode, std::function<void(const DFPCmd& cmd)>> callbackMap_;
     bool waitAvailable(unsigned int timeout, uint8_t& byte);
-    bool readCommand(Command& command, unsigned int timeout);
-    uint16_t calcChecksum(const Command& cmd);
-    bool checkChecksum(const Command& cmd);
+    bool readDFPCmd(DFPCmd& DFPCmd, unsigned int timeout);
+    uint16_t calcChecksum(const DFPCmd& cmd);
+    bool checkChecksum(const DFPCmd& cmd);
+
+    unsigned int bps_ = 9600;
 };
 
 #endif // DFPHANDLER_H
