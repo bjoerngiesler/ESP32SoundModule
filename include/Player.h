@@ -79,8 +79,8 @@ protected:
     MP3DecoderHelix mp3_;
     URLStreamESP32 urlStream_;
 
-    GeneratedSoundStream<int16_t> silenceStream_;
-    SquareWaveGenerator<int16_t> silentSquare_;
+    NullStream silenceStream_;
+    CatStream catStream_;
     EncodedAudioStream fileDecoder_;
     BufferedStream fileBuffer_;
     AudioEffectStream fileEffects_;

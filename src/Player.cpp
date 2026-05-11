@@ -1,8 +1,11 @@
 #include "Player.h"
 #include "Settings.h"
 #include "FileManager.h"
+#include <AudioTools/CoreAudio/BaseStream.h>
 
 Player Player::inst;
+
+#define EFFECTS
 
 #if defined(MEASURE_THROUGHPUT)
 #define OUTPUT_STREAM meas_
@@ -13,6 +16,13 @@ Player Player::inst;
 #define OUTPUT_STREAM i2s_
 #endif
 #endif
+
+void onBeginCallback(Stream* stream) {
+    bb::printf("Stream 0x%x started\n", stream);
+}
+void onEndCallback(Stream* stream) {
+    bb::printf("Stream 0x%x ended\n", stream);
+}
 
 Player::Player():
 #if defined(MEASURE_THROUGHPUT)
@@ -41,7 +51,7 @@ Result Player::start(ConsoleStream *stream) {
     pinMode(P_I2S_DATA_OUT, OUTPUT);
     pinMode(P_I2S_WS, OUTPUT);
 
-    //AudioToolsLogger.begin(Serial, AUDIO_TOOLS_LOG_LEVEL);
+    AudioToolsLogger.begin(Serial, AUDIO_TOOLS_LOG_LEVEL);
 
     // set up signal path back to front.
     // i2s_ takes its data from finalCopier_ => no stream connection.
@@ -61,19 +71,22 @@ Result Player::start(ConsoleStream *stream) {
 
     sigGenStream_.setInput(sineGen_);
 
-    silentSquare_.setAmplitude(0);
-    silenceStream_.setInput(silentSquare_);
+    catStream_.clear();
+    catStream_.add(silenceStream_);
+    catStream_.setOnBeginCallback(onBeginCallback);
+    catStream_.setOnEndCallback(onEndCallback);
 
 #if defined(EFFECTS)    
-    fileEffects_.setStream(silenceStream_);
+    fileEffects_.setStream(catStream_);
     fileEffects_.addEffect(delay_);
+    delay_.setDuration(100);
+    delay_.setFeedback(.5);
 
     fileVolume_.setStream(fileEffects_);
 #else
-    //fileBuffer_.setStream(fileDecoder_);
-    fileVolume_.setStream(silenceStream_);
+    fileVolume_.setStream(catStream_);
 #endif
-    //fileMixerIndex_ = mixer_.add(fileVolume_);
+    fileMixerIndex_ = mixer_.add(fileVolume_);
 
     fileDecoder_.addNotifyAudioChange(*this);
 
@@ -87,8 +100,9 @@ Result Player::start(ConsoleStream *stream) {
     mixerVolume_.begin(info_);
     mixer_.begin(info_);
     sigGenStream_.begin(info_);
-    silenceStream_.begin(info_);
-    silentSquare_.begin(info_);
+
+    silenceStream_.begin();
+    catStream_.begin();
 #if defined(EFFECTS)
     fileEffects_.begin(info_);
 #endif
@@ -111,13 +125,23 @@ Result Player::step() {
     float vol = volumeMeter_.volumeRatio();
     analogWrite(LED_BUILTIN, (1-vol)*255);
     //printf("Volume: %f\n", vol);
+    bb::printf("%d bytes available in file decoder\n", fileDecoder_.available()); 
+    bb::printf("%d bytes available in file\n", audioFile_.available()); 
+    if(audioFile_.available() == 0) {
+        catStream_.clear();
+        fileDecoder_.end();
+        catStream_.add(silenceStream_);
+        catStream_.begin();
+    }
 
+#if 0
     if(isPlaying()) {
         bb::printf("Audio file available: %d\n", audioFile_.available());
         if(audioFile_.available() == 0) {
             stopPlayback();
         }
     }
+#endif
 
     bb::Runloop::runloop.excuseOverrun();
     return RES_OK;
@@ -142,7 +166,6 @@ void Player::setAudioInfo(AudioInfo from) {
     sawGen_.setAudioInfo(from);
     sigGenStream_.setAudioInfo(from);
 
-    silenceStream_.setAudioInfo(from);
 #if defined(EFFECTS)
     fileEffects_.setAudioInfo(from);
 #endif
@@ -218,24 +241,36 @@ bool Player::playFile(const std::string& path) {
         wav_.begin();
         fileDecoder_.setDecoder(&wav_);
         fileDecoder_.setStream(audioFile_);
-#if defined(EFFECTS)
-        fileEffects_.setStream(fileDecoder_);
-#endif
-        fileVolume_.setStream(fileDecoder_);
         fileDecoder_.begin();
-        fileMixerIndex_ = mixer_.add(fileVolume_);
-        bb::printf("Mixer index assigned: %d\n", fileMixerIndex_);
+
+        bb::printf("Clearing cat stream\n");
+        catStream_.clear();
+        bb::printf("Adding file decoder 0x%x\n", &fileDecoder_);
+        catStream_.add(fileDecoder_);
+        bb::printf("Adding silence stream 0x%x\n", &silenceStream_);
+        catStream_.add(silenceStream_);
+        bb::printf("Beginning cat stream\n");
+        catStream_.begin();
+
+        // fileMixerIndex_ = mixer_.add(fileVolume_);
+        // bb::printf("Mixer index assigned: %d\n", fileMixerIndex_);
     } else if(path.rfind(".mp3") != std::string::npos) {
         mp3_.begin();
         fileDecoder_.setDecoder(&mp3_);
         fileDecoder_.setStream(audioFile_);
-#if defined(EFFECTS)
-        fileEffects_.setStream(fileDecoder_);
-#endif
-        fileVolume_.setStream(fileDecoder_);
         fileDecoder_.begin();
-        fileMixerIndex_ = mixer_.add(fileVolume_);
-        bb::printf("Mixer index assigned: %d\n", fileMixerIndex_);
+
+        bb::printf("Clearing cat stream\n");
+        catStream_.clear();
+        bb::printf("Adding file decoder\n");
+        catStream_.add(fileDecoder_);
+        bb::printf("Adding silence stream\n");
+        catStream_.add(silenceStream_);
+        bb::printf("Beginning cat stream\n");
+        catStream_.begin();
+        
+        // fileMixerIndex_ = mixer_.add(fileVolume_);
+        // bb::printf("Mixer index assigned: %d\n", fileMixerIndex_);
     } else if(path.rfind(".stream") != std::string::npos) {
         std::string url = audioFile_.readString().c_str();
         while(url.length() > 0 && (url.back() == '\n' || url.back() == '\r')) url.pop_back(); // Trim trailing newlines
@@ -245,13 +280,19 @@ bool Player::playFile(const std::string& path) {
         mp3_.begin();
         fileDecoder_.setDecoder(&mp3_);
         fileDecoder_.setStream(urlStream_);
-#if defined(EFFECTS)
-        fileEffects_.setStream(fileDecoder_);
-#endif
-        fileVolume_.setStream(fileDecoder_);
         fileDecoder_.begin();
-        fileMixerIndex_ = mixer_.add(fileVolume_);
-        bb::printf("Mixer index assigned: %d\n", fileMixerIndex_);
+
+        bb::printf("Clearing cat stream\n");
+        catStream_.clear();
+        bb::printf("Adding file decoder\n");
+        catStream_.add(fileDecoder_);
+        bb::printf("Adding silence stream\n");
+        catStream_.add(silenceStream_);
+        bb::printf("Beginning cat stream\n");
+        catStream_.begin();
+
+        // fileMixerIndex_ = mixer_.add(fileVolume_);
+        // bb::printf("Mixer index assigned: %d\n", fileMixerIndex_);
     } else {
         Serial.println("Unsupported file type");
         audioFile_.close();
@@ -262,20 +303,25 @@ bool Player::playFile(const std::string& path) {
 }
 
 void Player::stopPlayback() {
-#if defined(EFFECTS)
-    fileEffects_.setStream(silenceStream_);
-#endif
-    fileVolume_.setStream(silenceStream_);
+
+    bb::printf("* Clearing cat stream\n");
+    catStream_.clear();
+    bb::printf("* Adding silence stream\n");
+    catStream_.add(silenceStream_);
+    bb::printf("* Beginning cat stream\n");
+    catStream_.begin();
+
     fileDecoder_.end();
-    if(fileMixerIndex_ < 0) return; // not playing
-    bb::printf("Removing file mixer index %d from mixer\n", fileMixerIndex_);
-    mixer_.remove(fileMixerIndex_);
-    bb::printf("Mixer channels now: %d\n", mixer_.size());
-    fileMixerIndex_ = -1;
+
+    // if(fileMixerIndex_ < 0) return; // not playing
+    // bb::printf("Removing file mixer index %d from mixer\n", fileMixerIndex_);
+    // mixer_.remove(fileMixerIndex_);
+    // bb::printf("Mixer channels now: %d\n", mixer_.size());
+    // fileMixerIndex_ = -1;
 }
     
 bool Player::isPlaying() {
-    if(fileMixerIndex_ < 0) return false;
+    if(fileDecoder_.available() != 0) return false;
     return true;
 }
 
