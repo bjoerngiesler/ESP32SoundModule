@@ -20,7 +20,7 @@ bool FileManager::start() {
     bb::printf("done.\n");
 
     sdInitialized_ = true;
-    checkSDCardPresent();
+    sdPresent_ = false;
     return true;
 }
 
@@ -342,7 +342,6 @@ void FileManager::addSDCardInsertCallback(std::function<void(bool)> cb) {
 
 
 Result FileManager::lsCmd(const std::vector<String>& args, ConsoleStream *stream) {
-    Runloop::runloop.excuseOverrun();
     if(args.size() == 0) {
         if(printDirectory(curWd_) == true) return RES_OK;
         return RES_SUBSYS_RESOURCE_NOT_AVAILABLE;
@@ -353,7 +352,6 @@ Result FileManager::lsCmd(const std::vector<String>& args, ConsoleStream *stream
 }
 
 Result FileManager::catCmd(const std::vector<String>& args, ConsoleStream *stream) {
-    Runloop::runloop.excuseOverrun();
     String path = normalizePath(args[0]);
     if(fileExists(path) == false) return RES_SUBSYS_RESOURCE_NOT_AVAILABLE;
     File f = SD.open(path);

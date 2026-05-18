@@ -10,7 +10,12 @@ DFPHandler DFPHandler::inst;
 static const uint8_t VERSION = 0xff;
 
 std::map<DFPCmdCode, std::function<void(const DFPCmd& cmd)>> DFPHandler::callbackMap_ = {
+    { CMD_NEXT, [](const DFPCmd& cmd)->void { StateManager::inst.next(); }},
+    { CMD_PREV, [](const DFPCmd& cmd)->void { StateManager::inst.previous(); }},
+    { CMD_INC_VOL, [](const DFPCmd& cmd)->void { Player::inst.setOutputVolume(Player::inst.outputVolume() + 0.033); }},
+    { CMD_DEC_VOL, [](const DFPCmd& cmd)->void { Player::inst.setOutputVolume(Player::inst.outputVolume() - 0.033); }},
     { CMD_RESET, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdReset(cmd); }},
+    { CMD_PAUSE, [](const DFPCmd& cmd)->void { Player::inst.pausePlayback(!Player::inst.isPaused()); }},
     { CMD_VOLUME, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdSetVolume(cmd); }},
     { CMD_STOP, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdStopPlayback(cmd); }},
     { CMD_PLAY_FOLDER, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdPlayFolder(cmd); }},
@@ -31,6 +36,8 @@ Result DFPHandler::start(ConsoleStream* stream) {
 
 Result DFPHandler::step() {
     DFPCmd cmd;
+    if(!ser_.available()) return RES_OK;
+
     if(readDFPCmd(cmd, 1) == false) return RES_SUBSYS_COMM_ERROR;
     //bb::printf("DFPCmd: %02x Para1: %0x Para2: %0x Wants feedback: %d\n", cmd.cmd, cmd.para1, cmd.para2, cmd.feedback);
     if(callbackMap_.find(cmd.cmd) != callbackMap_.end()) {
@@ -163,14 +170,14 @@ void DFPHandler::cmdGetFolderFiles(const DFPCmd& cmd) {
 
 bool DFPHandler::sendCommand(const DFPCmd& cmd) {
     cmd.checksum = cmd.calcChecksum(true);
+    uint8_t buf[sizeof(cmd)+4];
+    buf[0] = 0x7e;
+    buf[1] = 0xff;
+    buf[2] = 6;
+    memcpy(&(buf[3]), (uint8_t*)&cmd, sizeof(cmd));
+    buf[sizeof(buf)-1]=0xef;
 
-    if(ser_.write(0x7e) != 1) return false; // start byte
-    if(ser_.write(0xff) != 1) return false; // version byte
-    if(ser_.write(6) != 1) return false;    // length
-
-    if(ser_.write((const char*)&cmd, sizeof(cmd)) != sizeof(cmd)) return false;
-
-    if(ser_.write(0xef) != 1) return false; // end byte
+    if(ser_.write(buf, sizeof(buf)) != sizeof(buf)) return false; // end byte
 
     return true;
 }

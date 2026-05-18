@@ -21,6 +21,7 @@ using namespace bb;
 //   Output pipeline:
 //       Mixer -> VolumeStream -> VolumeMeter -> I2SStream
 
+#define MULTITHREAD
 
 class Player: public AudioInfoSupport, virtual public bb::Subsystem {
 public:
@@ -47,7 +48,12 @@ public:
     AudioInfo audioInfo() override { return info_; }
     void setAudioInfo(AudioInfo from) override;
 
-    void setEffects(bool onoff);
+    void clearEffects();
+
+    void setDelay(bool onoff);
+    void setDelayDepth(float depth);
+    void setDelayFeedback(float feedback);
+    void setDelayTime(float time);
 
     // Accessing the signal generator
     void setSignalGeneratorEnabled(bool enabled);
@@ -65,13 +71,15 @@ public:
     bool isPaused() { return paused_; }
     PlayMode playMode() { return playMode_; }
     bool isPlaying() { return playMode_ != STOPPED; }
-    void setFileVolume(float vol) { fileVolume_.setVolume(vol); }
+    void setFileVolume(float vol) { fileVolume_.setVolume(constrain(vol, 0.0, 1.0)); }
 
     // Controlling the overall volume
-    void setOutputVolume(float vol) { mixerVolume_.setVolume(vol); }
+    void setOutputVolume(float vol) { mixerVolume_.setVolume(constrain(vol, 0.0, 1.0)); }
+    float outputVolume() { return mixerVolume_.volume(); }
     float measuredOutputVolume() { return volumeMeter_.volumeRatio(); }
 
     Result playCmd(const std::vector<String>& args, ConsoleStream *stream);
+    Result pauseCmd(const std::vector<String>& args, ConsoleStream *stream);
     Result sigGenCmd(const std::vector<String>& args, ConsoleStream *stream);
     Result volumeCmd(const std::vector<String>& args, ConsoleStream *stream);
 
@@ -79,6 +87,12 @@ public:
 
 protected:
     Player();
+#if defined(MULTITHREAD)
+    static void threadStatic(void* param) { Player::inst.thread(param); }
+    void thread(void* param);
+#endif
+    void runPipeline();
+
     AudioInfo info_ = DEFAULT_AUDIO_INFO;
 
     int signalMixerIndex_ = -1;
@@ -129,6 +143,12 @@ protected:
     bool isSDCardPresent_;
 
     bool paused_;
+
+#if defined(MULTITHREAD)
+    bool threadRunning_, threadShouldStop_;
+    SemaphoreHandle_t pipelineSemaphore_;
+    TaskHandle_t taskHandle_;
+#endif // MULTITHREAD
 };
 
 #endif // PLAYER_H

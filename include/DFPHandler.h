@@ -7,22 +7,22 @@
 #include <functional>
 
 enum DFPCmdCode {
-    CMD_NEXT             = 0x01,
-    CMD_PREV             = 0x02,
-    CMD_PLAY             = 0x03, 
-    CMD_INC_VOL          = 0x04,
-    CMD_DEC_VOL          = 0x05,
+    CMD_NEXT             = 0x01, // done, untested
+    CMD_PREV             = 0x02, // done, untested
+    CMD_PLAY             = 0x03, // ?? This is called "Specify tracking (NUM)" in the original manual
+    CMD_INC_VOL          = 0x04, // done, untested
+    CMD_DEC_VOL          = 0x05, // done, untested
     CMD_VOLUME           = 0x06, // done
     CMD_EQ               = 0x07,
     CMD_PLAYBACK_MODE    = 0x08,
     CMD_PLAYBACK_SRC     = 0x09,
-    CMD_STANDBY          = 0x0a,
-    CMD_NORMAL           = 0x0b, // Come out of standby mode
+    CMD_STANDBY          = 0x0a, // will not implement
+    CMD_NORMAL           = 0x0b, // will not implement - Come out of standby mode
     CMD_RESET            = 0x0c, // done
-    CMD_PLAYBACK         = 0x0d,
-    CMD_PAUSE            = 0x0e,
+    CMD_PLAYBACK         = 0x0d, 
+    CMD_PAUSE            = 0x0e, // done
     CMD_PLAY_FOLDER      = 0x0f, // done
-    CMD_VOL_ADJUST       = 0x10,
+    CMD_VOL_ADJUST       = 0x10, // will not implement
     CMD_REPEAT_PLAY      = 0x11,
     CMD_USE_MP3_FOLDER   = 0x12, // ??
     CMD_INSERT_ADVERT    = 0x13, // This interrupts the current track with an inserted one
@@ -32,7 +32,7 @@ enum DFPCmdCode {
     CMD_REPEAT_FOLDER    = 0x17,
     CMD_RANDOM_ALL       = 0x18,
     CMD_REPEAT_CURRENT   = 0x19,
-    CMD_SET_DAC          = 0x20,
+    CMD_SET_DAC          = 0x20, // ??
 
     CMD_GET_STAY_1       = 0x3c, // ?? According to original data sheet
     CMD_GET_STAY_2       = 0x3d, // ?? According to original data sheet

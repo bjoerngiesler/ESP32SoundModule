@@ -5,7 +5,7 @@
 
 Player Player::inst;
 
-#define EFFECTS
+//#define EFFECTS
 
 #if defined(MEASURE_THROUGHPUT)
 #define OUTPUT_STREAM meas_
@@ -16,6 +16,46 @@ Player Player::inst;
 #define OUTPUT_STREAM i2s_
 #endif
 #endif
+
+enum EffectID {
+    DELAY=0
+};
+
+#if defined(MULTITHREAD)
+
+class Lock {
+public:
+    Lock(SemaphoreHandle_t sem, const char* file, int line): sem_(sem), file_(file), line_(line) { 
+#if defined(MULTITHREAD_DEBUG)
+        bb::printf("%s:%d Creating auto-Lock\n", file_, line_); 
+#endif // MULTITHREAD_DEBUG
+        xSemaphoreTake(sem_, portMAX_DELAY); 
+    }
+    ~Lock() { 
+#if defined(MULTITHREAD_DEBUG)
+        bb::printf("%s:%d Releasing auto-Lock\n", file_, line_); 
+#endif // MULTITHREAD_DEBUG
+        xSemaphoreGive(sem_); 
+    }
+protected:
+    SemaphoreHandle_t sem_;
+    const char* file_;
+    int line_;
+};
+#if defined(MULTITHREAD_DEBUG)
+#define LOCK bb::printf("%s:%d Taking semaphore\n", __FILE__, __LINE__); xSemaphoreTake(pipelineSemaphore_, portMAX_DELAY)
+#define UNLOCK bb::printf("%s:%d Giving semaphore\n", __FILE__, __LINE__); xSemaphoreGive(pipelineSemaphore_)
+#else
+#define LOCK xSemaphoreTake(pipelineSemaphore_, portMAX_DELAY)
+#define UNLOCK xSemaphoreGive(pipelineSemaphore_)
+#endif
+#define LOCKED(sem)  Lock lock(sem, __FILE__, __LINE__)
+#else
+#define LOCK
+#define UNLOCK
+#define LOCKED(sem)
+#endif
+
 
 void onBeginCallback(Stream* stream) {
 //    bb::printf("Stream 0x%x started\n", stream);
@@ -31,29 +71,37 @@ Player::Player():
     finalCopier_(AUDIO_BUFFER_SIZE)
 {
     pinMode(LED_BUILTIN, OUTPUT);
+    analogWrite(LED_BUILTIN, 255);
+#if defined(MULTITHREAD)
+    pipelineSemaphore_ = xSemaphoreCreateBinary();
+    xSemaphoreGive(pipelineSemaphore_);
+#endif
 }
 
 Result Player::initialize() {
-    addCommand("play", "<filename>|<num>|<folder_num> <file_num>: Play the given filename or numbered file", 
+    addCommand("play", "<filename>|<num>|<folder_num> <file_num>", "Play the given filename or numbered file", 
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { return Player::inst.playCmd(words, stream); }, 1, 2);
-    addCommand("end", "Stop playback", 
+    addCommand("pause", "[on|off]", "Pause or unpause playback. Without arguments, it toggles", 
+               [](const std::vector<String>& words, ConsoleStream *stream)->Result { return Player::inst.pauseCmd(words, stream); }, 0, 1);
+    addCommand("end", "", "Stop playback (because \"stop\" stops the subsystem)", 
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { Player::inst.stopPlayback(); return RES_OK; }, 0, 0);
-    addCommand("vol", "[<volume>]: Query or set master volume", 
+    addCommand("vol", "[<volume>]", "Query or set master volume", 
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { return Player::inst.volumeCmd(words, stream); }, 0, 1);
-    addCommand("siggen", "on|off|sine|square|saw|volume <num>: Control the signal generator", 
+    addCommand("siggen", "on|off|sine|square|saw|volume <num>", "Control the signal generator", 
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { return Player::inst.sigGenCmd(words, stream); }, 1, 2);
-    addCommand("ls", "[<path>]: Print a list of files in <path> or in current working directory", 
+    addCommand("ls", "[<path>]", "Print a list of files in <path> or in current working directory", 
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.lsCmd(words, stream); }, 0, 1);
-    addCommand("cat", "<file>: Print contents of <file>", 
+    addCommand("cat", "<file>", "Print contents of <file>", 
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.catCmd(words, stream); }, 1, 1);
-    addCommand("cd", "[<path>]: Change current working directory to <path> or '/' if omitted", 
+    addCommand("cd", "[<path>]", "Change current working directory to <path> or '/' if omitted", 
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.cdCmd(words, stream); }, 0, 1);
-    addCommand("pwd", "Print current working directory", 
+    addCommand("pwd", "", "Print current working directory", 
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.pwdCmd(words, stream); }, 0, 0);
-    addCommand("mv", "<from> <to>: Rename file <from> to <to>", 
+    addCommand("mv", "<from> <to>", "Rename file <from> to <to>", 
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.mvCmd(words, stream); }, 2, 2);
-    addCommand("filemap", ": Print file map", 
+    addCommand("filemap", "", "Print file map", 
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.filemapCmd(words, stream); }, 0, 0);
+
     return Subsystem::initialize("player", "Main Player subsystem", "");
 }
 
@@ -63,6 +111,8 @@ Result Player::start(ConsoleStream *stream) {
     pinMode(P_I2S_WS, OUTPUT);
 
     AudioToolsLogger.begin(Serial, AUDIO_TOOLS_LOG_LEVEL);
+
+    LOCK;
 
     // set up signal path back to front.
     // i2s_ takes its data from finalCopier_ => no stream connection.
@@ -89,8 +139,8 @@ Result Player::start(ConsoleStream *stream) {
 
 #if defined(EFFECTS)    
     fileEffects_.setStream(catStream_);
-    delay_.setDuration(100);
-    delay_.setFeedback(.5);
+
+    delay_.setId(DELAY);
 
     fileVolume_.setStream(fileEffects_);
 #else
@@ -122,38 +172,79 @@ Result Player::start(ConsoleStream *stream) {
     sawGen_.begin(info_, N_B5);
     squareGen_.begin(info_, N_B5);
 
-    isSDCardPresent_ = FileManager::inst.checkSDCardPresent();
-    lastCardCheckTime_ = millis();
+    UNLOCK;
+
+    isSDCardPresent_ = false;
+    lastCardCheckTime_ = 0;
+
+#if defined(MULTITHREAD)
+    xTaskCreatePinnedToCore(threadStatic, "StreamTask", 3000, NULL, 2, &taskHandle_, 1);
+#endif
 
     return Subsystem::start();
 }
 
-Result Player::step() {
-    if(paused_) return RES_OK;
+void Player::runPipeline() {
+    LOCKED(pipelineSemaphore_);
+
+    if(paused_) {
+        analogWrite(LED_BUILTIN, 255);
+        return;
+    }
+
     size_t bytesCopied;
     bytesCopied = finalCopier_.copy();
     LOGI("Player::step(): finalCopier copied %d bytes", bytesCopied);
+
     float vol = volumeMeter_.volumeRatio();
     analogWrite(LED_BUILTIN, (1-vol)*255);
+}
+
+#if defined(MULTITHREAD)
+void Player::thread(void* param) {
+    threadRunning_ = true;
+    threadShouldStop_ = false;
+
+    while(!threadShouldStop_) {
+        runPipeline();
+        vTaskDelay(1);
+    }
+
+    threadRunning_ = false;
+    vTaskDelete(NULL);
+}
+#endif
+
+Result Player::step() {    
+    if(paused_) return RES_OK;
+#if !defined(MULTITHREAD)
+    runPipeline();
+#endif
 
     if((playMode_ == FROM_FILE && audioFile_.available() == 0) ||
-       (playMode_ == FROM_URL && urlStream_.available() == 0)) {
+       (playMode_ == FROM_URL && urlStream_.available() == 0) ||
+       (playMode_ == FROM_MEMORY && memoryStream_ != nullptr && memoryStream_->available() == 0)) {
         stopPlayback();
     }
 
     if((millis() - lastCardCheckTime_) > 1000) {
         FileManager::inst.checkSDCardPresent();
         lastCardCheckTime_ = millis();
+        Runloop::runloop.excuseOverrun();
     }
 
-    bb::Runloop::runloop.excuseOverrun();
     return RES_OK;
 }
 
 Result Player::stop(ConsoleStream *stream) {
+#if defined(MULTITHREAD)
+    threadShouldStop_ = true;
+    while(threadRunning_);
+#endif
     return RES_OK;
 }
 
+// Careful: owned by thread!!!
 void Player::setAudioInfo(AudioInfo from) {
     //bb::printf("New audioInfo: sample_rate: %d / channels: %d / bits_per_sample: %d\n", from.sample_rate, from.channels, from.bits_per_sample);
     sineGen_.setAudioInfo(from);
@@ -176,17 +267,45 @@ void Player::setAudioInfo(AudioInfo from) {
 #endif
     i2s_.setAudioInfo(from);
 
-    setSignalGeneratorVolume(sigGenVolume_);
+    float amplitude = sigGenVolume_ * ((1<<(info_.bits_per_sample-1))-1); // but actual amplitude is -INT16_MAX..INT16_MAX or whatever
+    sineGen_.setAmplitude(amplitude);
+    squareGen_.setAmplitude(amplitude);
+    sawGen_.setAmplitude(amplitude);
 
     info_ = from;
 }
 
-void Player::setEffects(bool onoff) {
+void Player::clearEffects() {
+    LOCKED(pipelineSemaphore_);
     fileEffects_.clear();
-    if(onoff) fileEffects_.addEffect(delay_);
 }
 
+void Player::setDelay(bool onoff) {
+    LOCKED(pipelineSemaphore_);
+
+    if(onoff && !fileEffects_.findEffect(DELAY)) fileEffects_.addEffect(delay_);
+    else if(!onoff && fileEffects_.findEffect(DELAY)) fileEffects_.clear();
+}
+
+void Player::setDelayDepth(float depth) {
+    LOCKED(pipelineSemaphore_);
+    delay_.setDepth(depth);
+}
+
+void Player::setDelayFeedback(float feedback) {
+    LOCKED(pipelineSemaphore_);
+    delay_.setFeedback(feedback);
+}
+
+void Player::setDelayTime(float time) {
+    LOCKED(pipelineSemaphore_);
+    delay_.setDuration(time*1000);
+}
+
+
 void Player::setSignalGeneratorEnabled(bool yn) {
+    LOCKED(pipelineSemaphore_);
+
     if(yn == false && signalMixerIndex_ >= 0) {
         bb::printf("Disabling signal generator.\n");
         mixer_.remove(signalMixerIndex_);
@@ -199,6 +318,8 @@ void Player::setSignalGeneratorEnabled(bool yn) {
 }
 
 void Player::setSignalGeneratorWaveform(Waveform wf) {
+    LOCKED(pipelineSemaphore_);
+
     switch(wf) {
     case SINE:
     default:
@@ -214,12 +335,16 @@ void Player::setSignalGeneratorWaveform(Waveform wf) {
 }
 
 void Player::setSignalGeneratorFrequency(float freq) {
+    LOCKED(pipelineSemaphore_);
+
     sineGen_.setFrequency(freq);
     squareGen_.setFrequency(freq);
     sawGen_.setFrequency(freq);
 }
 
 void Player::setSignalGeneratorVolume(float volume) {
+    LOCKED(pipelineSemaphore_);
+
     sigGenVolume_ = volume;                   // input is 0..1
     float amplitude = volume * ((1<<(info_.bits_per_sample-1))-1); // but actual amplitude is -INT16_MAX..INT16_MAX or whatever
 
@@ -241,10 +366,12 @@ bool Player::playFile(const String& path) {
     String p = FileManager::inst.normalizePath(path);
     File f = SD.open(p.c_str(), FILE_READ);
     if(!f) {
-        LOGE("Failed to open file '%s'\n", p.c_str());
+        LOGE("Failed to open file '%s'.\n", p.c_str());
         return false;
     }
-    bb::printf("Playing file '%s'\n", p.c_str());
+
+    LOCKED(pipelineSemaphore_);
+    bb::printf("Playing file '%s'.\n", p.c_str());
     audioFile_ = f;
     bool success;
 
@@ -267,6 +394,7 @@ bool Player::playFile(const String& path) {
         return success;        
     }
 
+    bb::printf("Failure\n");
     return false;
 }
     
@@ -282,6 +410,7 @@ bool Player::playMemFile(const MemFile& file) {
         return false;
     }
 
+    LOCKED(pipelineSemaphore_);
     if(memoryStream_ != nullptr) delete memoryStream_;
     memoryStream_ = new MemoryStream(file.buffer(), file.size());
 
@@ -299,14 +428,15 @@ bool Player::playMemFile(const MemFile& file) {
     return false;
 }
 
-
+// Called from playFile() and playMemFile() -- can't take a semaphore here
 bool Player::playEncodedStream(Stream& stream, AudioDecoder& dec) {
-    dec.begin();
     fileDecoder_.setDecoder(&dec);
     fileDecoder_.setStream(stream);
     fileDecoder_.clearNotifyAudioChange();
     fileDecoder_.addNotifyAudioChange(Player::inst);
     fileDecoder_.begin();
+
+    dec.begin();
 
     catStream_.clear();
     catStream_.add(fileDecoder_);
@@ -319,12 +449,13 @@ bool Player::playEncodedStream(Stream& stream, AudioDecoder& dec) {
 }
 
 void Player::stopPlayback() {
-    if(playMode() == STOPPED) return;
-
-    if(playMode_ == FROM_URL) {
-        //urlStream_.end();
-        //bb::printf("Ended URL stream\n");
+    if(playMode_ == STOPPED) {
+        bb::printf("Playback already stopped.\n");
+        return;
     }
+
+    LOCKED(pipelineSemaphore_);
+    urlStream_.end();
     fileDecoder_.end();
 
     //bb::printf("Massaging catStream\n");
@@ -332,7 +463,7 @@ void Player::stopPlayback() {
     catStream_.add(silenceStream_);
     catStream_.begin();
 
-    //bb::printf("Playback stopped.\n");
+    bb::printf("Playback stopped.\n");
 
     for(auto cb: onStopCallbacks_) cb();
     playMode_ = STOPPED;
@@ -347,6 +478,8 @@ bool Player::pausePlayback(bool onoff) {
 }
     
 Result Player::playCmd(const std::vector<String>& args, ConsoleStream *stream) {
+    Runloop::runloop.excuseOverrun(); // this does a lot of SD card stuff
+
     if(args.size() == 1) {
         String path = FileManager::inst.normalizePath(args[0]);
         if(FileManager::inst.fileExists(path)) {
@@ -354,17 +487,17 @@ Result Player::playCmd(const std::vector<String>& args, ConsoleStream *stream) {
             return RES_SUBSYS_RESOURCE_NOT_AVAILABLE;
         }
         
-        bb::printf("Not a file - trying to play '%s' as a number\n", args[0].c_str());
+        bb::printf("Not a file - trying to play '%s' as a number.\n", args[0].c_str());
         String filename = FileManager::inst.filename(unsigned(args[0].toInt()));
         if(filename != "") {
-            bb::printf("Resolved to '%s'\n", filename.c_str());
+            bb::printf("Resolved to '%s'.\n", filename.c_str());
             if(playFile(filename)) return RES_OK;
         }
         return RES_SUBSYS_RESOURCE_NOT_AVAILABLE;
     } else if(args.size() == 2) {
         String filename = FileManager::inst.filename(unsigned(args[0].toInt()), unsigned(args[1].toInt()));
         if(filename != "") {
-            bb::printf("Resolved to '%s'\n", filename.c_str());
+            bb::printf("Resolved to '%s'.\n", filename.c_str());
             if(playFile(filename)) return RES_OK;
         }
         return RES_SUBSYS_RESOURCE_NOT_AVAILABLE;
@@ -372,6 +505,19 @@ Result Player::playCmd(const std::vector<String>& args, ConsoleStream *stream) {
 
     return RES_CMD_FAILURE;
 }
+
+Result Player::pauseCmd(const std::vector<String>& args, ConsoleStream *stream) {
+    bool onoff = !isPaused();
+    if(args.size() == 1) {
+        if(args[0] == "on" || args[0] == "true") onoff = true;
+        if(args[0] == "off" || args[0] == "false") onoff = true;
+    }
+    if(Player::inst.pausePlayback(onoff) == true) {
+        return RES_OK;
+    }
+    return RES_SUBSYS_WRONG_MODE;
+}
+
 
 Result Player::sigGenCmd(const std::vector<String>& args, ConsoleStream *stream) {
     if(args.size() == 1) {

@@ -24,6 +24,26 @@ static const char *KEY_SIGGEN = "signal_generator";
 static const char *KEY_FILEPL = "file_player";
 static const char *KEY_IGNORE_DOTFILES = "ignore_dotfiles";
 static const char *KEY_IGNORE_NONNUMERIC = "ignore_non_numeric";
+static const char *KEY_FILE_INDEXING_MODE = "file_indexing_mode";
+static const char *VAL_NUMAL = "numal";
+static const char *VAL_ALNUM = "alnum";
+static const char *VAL_ORIG = "orig";
+
+static const char *KEY_FREQUENCY = "frequency";
+static const char *KEY_WAVEFORM = "waveform";
+static const char *VAL_SINE = "sine";
+static const char *VAL_SQUARE = "square";
+static const char *VAL_SAWTOOTH = "sawtooth";
+
+static const char *KEY_PLAY_ON_STARTUP = "play_on_startup";
+static const char *KEY_PLAY_ON_REMOVE = "play_on_remove";
+static const char *KEY_PLAY_ON_INSERT = "play_on_insert";
+
+static const char *KEY_DELAY = "delay";
+static const char *KEY_DELAY_DEPTH = "delay_depth";
+static const char *KEY_DELAY_FEEDBACK = "delay_feedback";
+static const char *KEY_DELAY_TIME = "delay_time";
+
 
 MemFile removedMemFile;
 
@@ -40,52 +60,50 @@ void startup() {
         wifiMulti.run();
     }
 
-    bool ignoreDotfiles = config.valueForKey(SEC_GLOBAL, "ignore_dotfiles", true);
-    bool ignoreNonNumeric = config.valueForKey(SEC_GLOBAL, "ignore_non_numeric", false);
-    FileManager::FileIndexingMode indexingMode = FileManager::IndexNumAl;
-    String indexingModeStr = config.valueForKey(SEC_GLOBAL, "file_indexing_mode", "numal");
-    if(indexingModeStr == "alnum") {
-        indexingMode = FileManager::IndexAlnum;
-    } else if(indexingModeStr == "numal") {
-        indexingMode = FileManager::IndexNumAl;
+    FileManager::inst.setIgnoreDotfiles(config.valueForKey(SEC_GLOBAL, KEY_IGNORE_DOTFILES, true));
+    FileManager::inst.setIgnoreNonNumeric(config.valueForKey(SEC_GLOBAL, KEY_IGNORE_NONNUMERIC, false));
+    String indexingModeStr = config.valueForKey(SEC_GLOBAL, KEY_FILE_INDEXING_MODE, VAL_NUMAL);
+    if(indexingModeStr == VAL_ALNUM) {
+        FileManager::inst.setFileIndexingMode(FileManager::IndexAlnum);
+    } else if(indexingModeStr == VAL_NUMAL) {
+        FileManager::inst.setFileIndexingMode(FileManager::IndexNumAl);
+    } else {
+        FileManager::inst.setFileIndexingMode(FileManager::IndexOrig);
     }
-
-    FileManager::inst.setIgnoreDotfiles(ignoreDotfiles);
-    FileManager::inst.setIgnoreNonNumeric(ignoreNonNumeric);
-    FileManager::inst.setFileIndexingMode(indexingMode);
 
     FileManager::inst.buildFileMap();
 
     // Configure signal generator
-    Player::inst.setSignalGeneratorEnabled(config.valueForKey(SEC_GLOBAL, "signal_generator", false));
-    Player::inst.setSignalGeneratorFrequency(config.valueForKey(SEC_SIGGEN, "frequency", 440.0f));
+    Player::inst.setSignalGeneratorEnabled(config.valueForKey(SEC_GLOBAL, KEY_SIGGEN, false));
+    Player::inst.setSignalGeneratorFrequency(config.valueForKey(SEC_SIGGEN, KEY_FREQUENCY, 440.0f));
     Player::inst.setSignalGeneratorVolume(config.valueForKey(SEC_SIGGEN, KEY_VOLUME, 1.0f));
-    String waveform = config.valueForKey(SEC_SIGGEN, "waveform", "sine");
-    if(waveform == "square") Player::inst.setSignalGeneratorWaveform(Player::SQUARE);
-    else if(waveform == "sawtooth" || waveform == "saw") Player::inst.setSignalGeneratorWaveform(Player::SAWTOOTH);
+    String waveform = config.valueForKey(SEC_SIGGEN, KEY_WAVEFORM, VAL_SINE);
+    if(waveform == VAL_SQUARE) Player::inst.setSignalGeneratorWaveform(Player::SQUARE);
+    else if(waveform == VAL_SAWTOOTH) Player::inst.setSignalGeneratorWaveform(Player::SAWTOOTH);
     else Player::inst.setSignalGeneratorWaveform(Player::SINE);
 
-    Player::inst.setFileVolume(config.valueForKey(SEC_FILEPL, KEY_VOLUME, 1.0f));
-    if(initial && config.hasValue(SEC_FILEPL, "play_on_startup")) {
-        bb::printf("Playing file %s\n", config.valueForKey(SEC_FILEPL, "play_on_startup").c_str());
-        Player::inst.playFile(config.valueForKey(SEC_FILEPL, "play_on_startup"));
-    } else if(config.hasValue(SEC_FILEPL, "play_on_insert")) {
-        Player::inst.playFile(config.valueForKey(SEC_FILEPL, "play_on_insert"));
-    }
-    if(config.hasValue(SEC_FILEPL, "play_on_remove")) {
-        bb::printf("Storing file '%s' to be played on remove.\n", config.valueForKey(SEC_FILEPL, "play_on_remove").c_str());
-        bb::printf("Free PSRAM before: %d\n", ESP.getFreePsram());
-
-        removedMemFile = MemFile(config.valueForKey(SEC_FILEPL, "play_on_remove"));
-
-        bb::printf("Free PSRAM after: %d\n", ESP.getFreePsram());
-        bb::printf("Mem file has a size of %d, buffer at 0x%0x, filename '%s'\n", 
-            removedMemFile.size(), removedMemFile.buffer(), removedMemFile.filename().c_str());
-    }
-    Player::inst.setEffects(config.valueForKey(SEC_FILEPL, "effects", false));
+    Player::inst.setDelay(config.valueForKey(SEC_FILEPL, KEY_DELAY, false));
+    Player::inst.setDelayDepth(config.valueForKey(SEC_FILEPL, KEY_DELAY_DEPTH, 0.4f));
+    Player::inst.setDelayFeedback(config.valueForKey(SEC_FILEPL, KEY_DELAY_FEEDBACK, 0.3f));
+    Player::inst.setDelayTime(config.valueForKey(SEC_FILEPL, KEY_DELAY_TIME, 0.3f));
     Player::inst.setOutputVolume(config.valueForKey(SEC_GLOBAL, KEY_VOLUME, 1.0f));
 
+    Player::inst.setFileVolume(config.valueForKey(SEC_FILEPL, KEY_VOLUME, 1.0f));
+    String on_startup = config.valueForKey(SEC_FILEPL, KEY_PLAY_ON_STARTUP);
+    String on_insert = config.valueForKey(SEC_FILEPL, KEY_PLAY_ON_INSERT);
+    String on_remove = config.valueForKey(SEC_FILEPL, KEY_PLAY_ON_REMOVE);
+    if(on_remove != "") {
+        bb::printf("Storing file '%s' to be played on remove.\n", on_remove.c_str());
+        removedMemFile = MemFile(on_remove);
+    }
+    if(initial && on_startup != "") {
+        Player::inst.playFile(on_startup);
+    } else if(on_insert != "") {
+        Player::inst.playFile(on_insert);
+    }
+
     initial = false;
+    Runloop::runloop.excuseOverrun();
 }
 
 void teardown(void) {
@@ -108,6 +126,8 @@ void sdCardInserted(bool yn) {
 
 void setup(void) {
     Serial.begin(115200);
+    while(!Serial) delay(100);
+    delay(3000);
     psramInit();
 
     bb::Console::console.initialize();
@@ -115,14 +135,11 @@ void setup(void) {
     DFPHandler::inst.initialize();
     Player::inst.initialize();
 
-    FileManager::inst.addSDCardInsertCallback(sdCardInserted);
-
     FileManager::inst.start();
     DFPHandler::inst.start();
     Player::inst.start();
-    if(FileManager::inst.checkSDCardPresent()) {
-        startup();
-    }
+
+    FileManager::inst.addSDCardInsertCallback(sdCardInserted);
 
     bb::Console::console.setFirstResponder(&Player::inst);
     bb::Console::console.start();
