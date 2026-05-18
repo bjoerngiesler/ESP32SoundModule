@@ -15,7 +15,9 @@ class FileManager {
 public:
     static FileManager inst;
 
-    typedef std::map<unsigned int, std::string> FileMap;
+    typedef std::map<unsigned int, String> FileMap;
+    typedef std::map<unsigned int, FileMap> FolderMap;
+
     enum FileIndexingMode {
         IndexOrig,
         IndexAlnum,
@@ -28,28 +30,28 @@ public:
     };
 
     bool start();
-    bool step() { return true; }
+    bool step();
     bool stop(); 
 
     void buildFileMap();
-    void buildFolderMap();
+    void printFileMap(ConsoleStream* stream = nullptr);
 
-    const std::string& filename(unsigned int fileIndex);
-    std::string filename(unsigned int folderIndex, unsigned int fileIndex);
-    std::string foldername(unsigned int folderIndex);
+    const String& filename(unsigned int fileIndex);
+    String filename(unsigned int folderIndex, unsigned int fileIndex);
+    String foldername(unsigned int folderIndex);
     unsigned int numFolders();
     unsigned int numFiles();
     unsigned int numFilesInFolder(unsigned int folderIndex);
 
-    bool isCardPresent();
+    bool checkSDCardPresent();
     bool printCardInfo();
-    bool printDirectory(const std::string& path="/", bool recursive=false);
-    bool printContentsOfFile(const std::string& path);
+    bool printDirectory(const String& path="/", bool recursive=false);
+    bool printContentsOfFile(const String& path);
 
-    bool listFilesInDirectory(const std::string& path, 
-                              std::vector<std::string> &files, 
+    bool listFilesInDirectory(const String& path, 
+                              std::vector<String> &files, 
                               bool includeDirectories=false);
-    bool listFilesInDirectory(const std::string& path, 
+    bool listFilesInDirectory(const String& path, 
                               FileMap &files, 
                               FileType typeFilter);
 
@@ -57,20 +59,31 @@ public:
     void setIgnoreDotfiles(bool ignore) { ignoreDotfiles_ = ignore; }
     void setIgnoreNonNumeric(bool ignore) { ignoreNonNumeric_ = ignore; }
 
-    bool fileExists(const std::string& path);
+    bool fileExists(const String& path);
+
+    String normalizePath(const String& p);
+
+    void addSDCardInsertCallback(std::function<void(bool)> cb);
 
     Result lsCmd(const std::vector<String>& args, ConsoleStream *stream);
     Result catCmd(const std::vector<String>& args, ConsoleStream *stream);
-
+    Result cdCmd(const std::vector<String>& args, ConsoleStream *stream);
+    Result pwdCmd(const std::vector<String>& args, ConsoleStream *stream);
+    Result mvCmd(const std::vector<String>& args, ConsoleStream *stream);
+    Result filemapCmd(const std::vector<String>& args, ConsoleStream *stream);
 protected:
     FileManager();
-    bool printDirectory(File dir, bool recursive=false, std::string prefix="");
-    FileMap fileMap_, folderMap_;
+    bool printDirectory(File dir, bool recursive=false, String prefix="");
+    FolderMap fileMap_;
     bool sdInitialized_ = false;
+    bool sdPresent_ = false;
     FileIndexingMode indexingMode_ = IndexNumAl;
     bool ignoreDotfiles_ = true;
     bool ignoreNonNumeric_ = false;
-    std::string defaultFilename_ = "";
+    String defaultFilename_ = "";
+    String curWd_ = "/";
+
+    std::vector<std::function<void(bool)>> sdCardInsertCallbacks_;
 };
 
 #endif // FILEMANAGER_H

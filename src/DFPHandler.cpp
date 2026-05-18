@@ -3,22 +3,29 @@
 #include "DFPHandler.h"
 #include "Player.h"
 #include "FileManager.h"
+#include "StateManager.h"
 
 DFPHandler DFPHandler::inst;
+
+static const uint8_t VERSION = 0xff;
 
 std::map<DFPCmdCode, std::function<void(const DFPCmd& cmd)>> DFPHandler::callbackMap_ = {
     { CMD_RESET, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdReset(cmd); }},
     { CMD_VOLUME, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdSetVolume(cmd); }},
     { CMD_STOP, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdStopPlayback(cmd); }},
-    { CMD_PLAY_FOLDER, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdPlayFolder(cmd); }}
+    { CMD_PLAY_FOLDER, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdPlayFolder(cmd); }},
+    { CMD_GET_U_FILES, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdGetUFiles(cmd); }},
+    { CMD_GET_FOLDER_FILES, [](const DFPCmd& cmd)->void { DFPHandler::inst.cmdGetFolderFiles(cmd); }},
 };
 
-bb::Result DFPHandler::initialize() {
+bb::Result DFPHandler::initialize(HardwareSerial& ser, unsigned int bps) {
+    ser_ = ser;
+    bps_ = bps;
     return Subsystem::initialize("dfp", "DFP Protocol Handler", "");
 }
 
 Result DFPHandler::start(ConsoleStream* stream) {
-    Serial1.begin(bps_, SERIAL_8N1, RX, TX);
+    ser_.begin(bps_, SERIAL_8N1, RX, TX);
     return Subsystem::start(stream);;
 }
 
@@ -40,25 +47,25 @@ Result DFPHandler::stop(ConsoleStream *stream) {
 
 Result DFPHandler::setBps(unsigned int bps) {
     if(bps_ == bps) return RES_OK;
-    Serial1.begin(bps);
+    ser_.begin(bps);
     bps_ = bps;
     return RES_OK;
 }
 
 bool DFPHandler::waitAvailable(unsigned int timeout, uint8_t& byte) {
-    while(!Serial1.available() && timeout > 0) {
+    while(!ser_.available() && timeout > 0) {
         timeout--;
         delay(1);
     }
-    if(!Serial1.available()) {
+    if(!ser_.available()) {
         return false;
     }
-    byte = Serial1.read();
+    byte = ser_.read();
     return true;
 }
 
-bool DFPHandler::readDFPCmd(DFPCmd& DFPCmd, unsigned int timeout) {
-    uint8_t sync, ver, len, cmd, feedback, para1, para2, checksum;
+bool DFPHandler::readDFPCmd(DFPCmd& cmd, unsigned int timeout) {
+    uint8_t sync, ver, len;
 
     // sync
     while(true) {
@@ -99,30 +106,28 @@ bool DFPHandler::readDFPCmd(DFPCmd& DFPCmd, unsigned int timeout) {
         return false;
     }
 
-    DFPCmd.version = ver;
-    DFPCmd.cmd = (DFPCmdCode)buf[0];
-    DFPCmd.feedback = buf[1]>0;
-    DFPCmd.para1 = buf[2];
-    DFPCmd.para2 = buf[3];
-    DFPCmd.checksum = buf[4] << 8 | buf[5];
-    if(checkChecksum(DFPCmd) == false) {
-        bb::printf("Checksum error -- should be 0x%0x but is 0x%0x\n", calcChecksum(DFPCmd), DFPCmd.checksum);
+    cmd.cmd = (DFPCmdCode)buf[0];
+    cmd.feedback = buf[1]>0;
+    cmd.para1 = buf[2];
+    cmd.para2 = buf[3];
+    cmd.checksum = buf[4] << 8 | buf[5];
+    if(cmd.calcChecksum() != cmd.checksum) {
+        bb::printf("Checksum error -- should be 0x%0x but is 0x%0x\n", cmd.calcChecksum(), cmd.checksum);
         return false;
     } 
 
     return true;
 }
 
-uint16_t DFPHandler::calcChecksum(const DFPCmd& cmd) {
-    return 1 + (0xffff - (cmd.version  + 6 + cmd.cmd + cmd.feedback + cmd.para1 + cmd.para2));
-}
-
-bool DFPHandler::checkChecksum(const DFPCmd& cmd) {
-    return calcChecksum(cmd) == cmd.checksum;
+uint16_t DFPCmd::calcChecksum(bool swap) const {
+    uint16_t cs = 1 + (0xffff - (VERSION  + 6 + cmd + feedback + para1 + para2));
+    if(swap) return (cs&0xff) << 8 | (cs&0xff00) >> 8;
+    else return cs;
 }
 
 void DFPHandler::cmdReset(const DFPCmd& cmd) {
     bb::printf("CMD: Reset!\n");
+    StateManager::inst.stop();
 }
 
 void DFPHandler::cmdSetVolume(const DFPCmd& cmd) {
@@ -134,11 +139,38 @@ void DFPHandler::cmdSetVolume(const DFPCmd& cmd) {
 
 void DFPHandler::cmdStopPlayback(const DFPCmd& cmd) {
     bb::printf("CMD: Stop playback\n");
-    Player::inst.stopPlayback();
+    StateManager::inst.stop();
 }
 
 void DFPHandler::cmdPlayFolder(const DFPCmd& cmd) {
-    std::string filename = FileManager::inst.filename(cmd.para1, cmd.para2);
-    bb::printf("CMD: Play folder %d file %d => '%s'\n", cmd.para1, cmd.para2, filename.c_str());
-    if(filename != "") Player::inst.playFile(filename);
+    bb::printf("CMD: Play folder %d file %d\n", cmd.para1, cmd.para2);
+    StateManager::inst.playFile(cmd.para2, cmd.para1);
+}
+
+void DFPHandler::cmdGetUFiles(const DFPCmd& cmd) {
+    bb::printf("CMD: Get U Files %d / %d --> %d\n", cmd.para1, cmd.para2, FileManager::inst.numFiles());
+    DFPCmd c = cmd;
+    c.para2 = FileManager::inst.numFiles();
+    if(sendCommand(c) == false) bb::printf("Send failed\n");
+}
+
+void DFPHandler::cmdGetFolderFiles(const DFPCmd& cmd) {
+    bb::printf("CMD: Get Folder Files %d / %d --> %d\n", cmd.para1, cmd.para2, FileManager::inst.numFilesInFolder(cmd.para2));
+    DFPCmd c = cmd;
+    c.para2 = FileManager::inst.numFilesInFolder(cmd.para2);
+    if(sendCommand(c) == false) bb::printf("Send failed\n");
+}
+
+bool DFPHandler::sendCommand(const DFPCmd& cmd) {
+    cmd.checksum = cmd.calcChecksum(true);
+
+    if(ser_.write(0x7e) != 1) return false; // start byte
+    if(ser_.write(0xff) != 1) return false; // version byte
+    if(ser_.write(6) != 1) return false;    // length
+
+    if(ser_.write((const char*)&cmd, sizeof(cmd)) != sizeof(cmd)) return false;
+
+    if(ser_.write(0xef) != 1) return false; // end byte
+
+    return true;
 }

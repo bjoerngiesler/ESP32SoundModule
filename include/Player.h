@@ -13,6 +13,7 @@ using namespace bb;
 #include <AudioTools/AudioCodecs/CodecMP3Helix.h>
 #include <AudioTools/Communication/HTTP/URLStreamESP32.h>
 #include "Settings.h"
+#include "MemFile.h"
 
 // Pipeline setup:
 //   Signal generator pipeline:
@@ -29,6 +30,13 @@ public:
         SAWTOOTH
     };
 
+    enum PlayMode {
+        STOPPED,
+        FROM_FILE,
+        FROM_URL,
+        FROM_MEMORY
+    };
+
     static Player inst;
 
     Result initialize() override;
@@ -36,10 +44,10 @@ public:
     Result step() override;
     Result stop(ConsoleStream *stream=nullptr) override;
 
-    Result handleConsoleCommand(const std::vector<String>& words, ConsoleStream *stream) override;
-
     AudioInfo audioInfo() override { return info_; }
     void setAudioInfo(AudioInfo from) override;
+
+    void setEffects(bool onoff);
 
     // Accessing the signal generator
     void setSignalGeneratorEnabled(bool enabled);
@@ -48,9 +56,15 @@ public:
     void setSignalGeneratorVolume(float vol);
 
     // Accessing the file player
-    bool playFile(const std::string& path);
+    bool playFile(const String& path);
+    bool playMemFile(const MemFile& file);
+    bool playEncodedStream(Stream& stream, AudioDecoder& dec);
+
     void stopPlayback();
-    bool isPlaying();
+    bool pausePlayback(bool onoff);
+    bool isPaused() { return paused_; }
+    PlayMode playMode() { return playMode_; }
+    bool isPlaying() { return playMode_ != STOPPED; }
     void setFileVolume(float vol) { fileVolume_.setVolume(vol); }
 
     // Controlling the overall volume
@@ -59,6 +73,9 @@ public:
 
     Result playCmd(const std::vector<String>& args, ConsoleStream *stream);
     Result sigGenCmd(const std::vector<String>& args, ConsoleStream *stream);
+    Result volumeCmd(const std::vector<String>& args, ConsoleStream *stream);
+
+    void addOnStopCallback(std::function<bool(void)> fn);
 
 protected:
     Player();
@@ -79,10 +96,11 @@ protected:
     MP3DecoderHelix mp3_;
     URLStreamESP32 urlStream_;
 
+    MemoryStream *memoryStream_ = nullptr;
+
     NullStream silenceStream_;
     CatStream catStream_;
     EncodedAudioStream fileDecoder_;
-    BufferedStream fileBuffer_;
     AudioEffectStream fileEffects_;
     PitchShift pitchshift_;
     Delay delay_;
@@ -102,6 +120,15 @@ protected:
 
     I2SStream i2s_;    
     File audioFile_;
+
+    PlayMode playMode_ = STOPPED;
+
+    std::vector<std::function<bool(void)>> onStopCallbacks_;
+
+    unsigned long lastCardCheckTime_;
+    bool isSDCardPresent_;
+
+    bool paused_;
 };
 
 #endif // PLAYER_H

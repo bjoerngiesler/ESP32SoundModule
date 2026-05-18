@@ -7,23 +7,23 @@
 
 class Configuration {
 public:
-    Configuration(const std::string& filename = "/config.txt");
+    Configuration(const String& filename = "/config.txt");
 
     void clear();
-    bool hasSection(const std::string& section);
-    bool hasValue(const std::string& section, const std::string& key);
-    std::string valueForKey(const std::string& section, const std::string& key, const char* defaultValue = "") const;
-    float valueForKey(const std::string& section, const std::string& key, float defaultValue) const;
-    int valueForKey(const std::string& section, const std::string& key, int defaultValue) const;
-    bool valueForKey(const std::string& section, const std::string& key, bool defaultValue) const;
+    bool hasSection(const String& section);
+    bool hasValue(const String& section, const String& key);
+    String valueForKey(const String& section, const String& key, const char* defaultValue = "") const;
+    float valueForKey(const String& section, const String& key, float defaultValue) const;
+    int valueForKey(const String& section, const String& key, int defaultValue) const;
+    bool valueForKey(const String& section, const String& key, bool defaultValue) const;
     void print();
 protected:
-    bool readFromFile(const std::string& filename);
+    bool readFromFile(const String& filename);
 
-    typedef std::map<std::string, std::string> Dictionary;
-    std::map<std::string, Dictionary> sections_;
+    typedef std::map<String, String> Dictionary;
+    std::map<String, Dictionary> sections_;
 
-    bool readLine(File& file, std::string& line);
+    bool readLine(File& file, String& line);
 };
 
 #endif // CONFIGURATION_H

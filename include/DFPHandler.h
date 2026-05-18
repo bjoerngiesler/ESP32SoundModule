@@ -9,26 +9,26 @@
 enum DFPCmdCode {
     CMD_NEXT             = 0x01,
     CMD_PREV             = 0x02,
-    CMD_PLAY             = 0x03,
+    CMD_PLAY             = 0x03, 
     CMD_INC_VOL          = 0x04,
     CMD_DEC_VOL          = 0x05,
-    CMD_VOLUME           = 0x06,
+    CMD_VOLUME           = 0x06, // done
     CMD_EQ               = 0x07,
     CMD_PLAYBACK_MODE    = 0x08,
     CMD_PLAYBACK_SRC     = 0x09,
     CMD_STANDBY          = 0x0a,
     CMD_NORMAL           = 0x0b, // Come out of standby mode
-    CMD_RESET            = 0x0c,
+    CMD_RESET            = 0x0c, // done
     CMD_PLAYBACK         = 0x0d,
     CMD_PAUSE            = 0x0e,
-    CMD_PLAY_FOLDER      = 0x0f,
+    CMD_PLAY_FOLDER      = 0x0f, // done
     CMD_VOL_ADJUST       = 0x10,
     CMD_REPEAT_PLAY      = 0x11,
     CMD_USE_MP3_FOLDER   = 0x12, // ??
     CMD_INSERT_ADVERT    = 0x13, // This interrupts the current track with an inserted one
-    CMD_SPEC_TRACK_3000  = 0x14, // Play from specific track with up to 3000 files
+    CMD_SPEC_TRACK_3000  = 0x14, // Play from specific folder with up to 3000 files
     CMD_STOP_ADVERT      = 0x15, // This stops the interrupt and resumes playback on the original
-    CMD_STOP             = 0x16,
+    CMD_STOP             = 0x16, // done
     CMD_REPEAT_FOLDER    = 0x17,
     CMD_RANDOM_ALL       = 0x18,
     CMD_REPEAT_CURRENT   = 0x19,
@@ -46,13 +46,13 @@ enum DFPCmdCode {
     CMD_GET_MODE         = 0x45,
     CMD_GET_VERSION      = 0x46,
     CMD_GET_TF_FILES     = 0x47,
-    CMD_GET_U_FILES      = 0x48,
+    CMD_GET_U_FILES      = 0x48, // done
     CMD_GET_FLASH_FILES  = 0x49,
     CMD_KEEP_ON          = 0x4a,
     CMD_GET_TF_TRACK     = 0x4b,
     CMD_GET_U_TRACK      = 0x4c,
     CMD_GET_FLASH_TRACK  = 0x4d,
-    CMD_GET_FOLDER_FILES = 0x4e,
+    CMD_GET_FOLDER_FILES = 0x4e, // done
     CMD_GET_FOLDERS      = 0x4f
 };
 
@@ -80,12 +80,13 @@ enum PlaySource {
     SRC_FLASH = 5
 };
 
-struct DFPCmd {
-    uint8_t version;
-    DFPCmdCode cmd;
-    bool feedback;
-    uint8_t para1, para2;
-    uint16_t checksum;
+struct PACKED_ATTR DFPCmd {
+    DFPCmdCode cmd            : 8;
+    bool feedback             : 8;
+    uint8_t para1             : 8;
+    uint8_t para2             : 8;
+    mutable uint16_t checksum : 16;
+    uint16_t calcChecksum(bool swap=false) const;
 };
 
 using namespace bb;
@@ -94,7 +95,7 @@ class DFPHandler: public Subsystem {
 public:
     static DFPHandler inst;
 
-    Result initialize();
+    Result initialize(HardwareSerial& ser = Serial1, unsigned int bps=9600);
     Result start(ConsoleStream* stream = nullptr);
     Result step();
     Result stop(ConsoleStream *stream = nullptr);
@@ -105,14 +106,17 @@ public:
     void cmdSetVolume(const DFPCmd& cmd);
     void cmdStopPlayback(const DFPCmd& cmd);
     void cmdPlayFolder(const DFPCmd& cmd);
+    void cmdGetUFiles(const DFPCmd& cmd);
+    void cmdGetFolderFiles(const DFPCmd& cmd);
+
+    bool sendCommand(const DFPCmd& cmd);
 protected:
     static std::map<DFPCmdCode, std::function<void(const DFPCmd& cmd)>> callbackMap_;
     bool waitAvailable(unsigned int timeout, uint8_t& byte);
     bool readDFPCmd(DFPCmd& DFPCmd, unsigned int timeout);
-    uint16_t calcChecksum(const DFPCmd& cmd);
-    bool checkChecksum(const DFPCmd& cmd);
 
     unsigned int bps_ = 9600;
+    HardwareSerial& ser_ = Serial1;
 };
 
 #endif // DFPHANDLER_H

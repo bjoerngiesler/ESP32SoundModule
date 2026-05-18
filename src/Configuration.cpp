@@ -1,28 +1,28 @@
 #include "Configuration.h"
 #include "FileManager.h"
 
-Configuration::Configuration(const std::string& filename) {
+Configuration::Configuration(const String& filename) {
     readFromFile(filename);
 }
 
 void Configuration::clear() {
-    sections_ = std::map<std::string, Dictionary>();
+    sections_ = std::map<String, Dictionary>();
 }
 
-bool Configuration::readFromFile(const std::string& filename) {
+bool Configuration::readFromFile(const String& filename) {
     File file;
     
     if(!(file = SD.open(filename.c_str(), FILE_READ))) return false;
 
     Dictionary currentSection = sections_["global"];
-    std::string currentSectionName = "global";
+    String currentSectionName = "global";
 
-    std::string line;
+    String line;
     while(readLine(file, line)) {
-        if(line[0] == '#' || line[0] == ';' || line.empty()) continue; // Comment or empty line
+        if(line[0] == '#' || line[0] == ';' || line.isEmpty()) continue; // Comment or empty line
 
         if(line[0] == '[' && line[line.length()-1] == ']') {
-            std::string sectionName = line.substr(1, line.length()-2);
+            String sectionName = line.substring(1, line.length()-1);
             if(sectionName.length() == 0) {
                 bb::printf("Invalid section name: '%s'\n", line.c_str());
                 continue; // Invalid section name
@@ -33,28 +33,28 @@ bool Configuration::readFromFile(const std::string& filename) {
             continue;
         }
 
-        size_t eqPos = line.find('=');
-        if(eqPos == std::string::npos) {
+        int eqPos = line.indexOf('=');
+        if(eqPos == -1) {
             continue; // Invalid line
         }
-        std::string key = line.substr(0, eqPos);
-        while(!key.empty() && isspace(key.back())) key.pop_back(); // Trim trailing whitespace from key
-        while(!key.empty() && isspace(key.front())) key.erase(key.begin()); // Trim leading whitespace from key
-        std::string value = line.substr(eqPos+1);
-        while(!value.empty() && isspace(value.back())) value.pop_back(); // Trim trailing whitespace from value
-        while(!value.empty() && isspace(value.front())) value.erase(value.begin()); // Trim
+        String key = line.substring(0, eqPos);
+        while(!key.isEmpty() && isspace(key[key.length()-1])) key = key.substring(0, key.length()-1); // Trim trailing whitespace from key
+        while(!key.isEmpty() && isspace(key[0])) key = key.substring(1, key.length()); // Trim leading whitespace from key
+        String value = line.substring(eqPos+1);
+        while(!value.isEmpty() && isspace(value[value.length()-1])) value = value.substring(0, value.length()-1); // Trim trailing whitespace from value
+        while(!value.isEmpty() && isspace(value[0])) value = value.substring(1, value.length()); // Trim
         if(key.length() == 0 || value.length() == 0) {
             continue; // Invalid line
         }
-        if(key.size() >= 2 && 
-           (key[0] == '"' && key[key.size()-1] == '"') ||
-           (key[0] == '\'' && key[key.size()-1] == '\'')) {
-            key = key.substr(1, key.length()-2); // Remove quotes around key
+        if(key.length() >= 2 && 
+           (key[0] == '"' && key[key.length()-1] == '"') ||
+           (key[0] == '\'' && key[key.length()-1] == '\'')) {
+            key = key.substring(1, key.length()-1); // Remove quotes around key
         }
-        if(value.size() >= 2 && 
-           (value[0] == '"' && value[value.size()-1] == '"') ||
-           (value[0] == '\'' && value[value.size()-1] == '\'')) {
-            value = value.substr(1, value.length()-2); // Remove quotes around value
+        if(value.length() >= 2 && 
+           (value[0] == '"' && value[value.length()-1] == '"') ||
+           (value[0] == '\'' && value[value.length()-1] == '\'')) {
+            value = value.substring(1, value.length()-1); // Remove quotes around value
         }
         if(key.length() == 0 || value.length() == 0) {
             continue; // Invalid line
@@ -76,7 +76,7 @@ void Configuration::print() {
     }
 }
 
-bool Configuration::readLine(File& file, std::string& line) {
+bool Configuration::readLine(File& file, String& line) {
     line = "";
     int val;
     while((val = file.read()) != -1) {
@@ -86,17 +86,17 @@ bool Configuration::readLine(File& file, std::string& line) {
     return line.length() > 0 || val != -1;
 }
 
-bool Configuration::hasSection(const std::string& section) {
+bool Configuration::hasSection(const String& section) {
     return sections_.find(section) != sections_.end();
 }
 
-bool Configuration::hasValue(const std::string& section, const std::string& key) {
+bool Configuration::hasValue(const String& section, const String& key) {
     auto secIt = sections_.find(section);
     if(secIt == sections_.end()) return false;
     return secIt->second.find(key) != secIt->second.end();
 }
 
-std::string Configuration::valueForKey(const std::string& section, const std::string& key, const char* defaultValue) const {
+String Configuration::valueForKey(const String& section, const String& key, const char* defaultValue) const {
     auto secIt = sections_.find(section);
     if(secIt == sections_.end()) return defaultValue;
     auto keyIt = secIt->second.find(key);
@@ -104,7 +104,7 @@ std::string Configuration::valueForKey(const std::string& section, const std::st
     return keyIt->second;
 }
 
-float Configuration::valueForKey(const std::string& section, const std::string& key, float defaultValue) const {
+float Configuration::valueForKey(const String& section, const String& key, float defaultValue) const {
     auto secIt = sections_.find(section);
     if(secIt == sections_.end()) return defaultValue;
     auto keyIt = secIt->second.find(key);
@@ -119,7 +119,7 @@ float Configuration::valueForKey(const std::string& section, const std::string& 
     return var;
 }
 
-int Configuration::valueForKey(const std::string& section, const std::string& key, int defaultValue) const {
+int Configuration::valueForKey(const String& section, const String& key, int defaultValue) const {
     auto secIt = sections_.find(section);
     if(secIt == sections_.end()) return defaultValue;
     auto keyIt = secIt->second.find(key);
@@ -134,13 +134,13 @@ int Configuration::valueForKey(const std::string& section, const std::string& ke
     return var;    
 }
 
-bool Configuration::valueForKey(const std::string& section, const std::string& key, bool defaultValue) const {
+bool Configuration::valueForKey(const String& section, const String& key, bool defaultValue) const {
     auto secIt = sections_.find(section);
     if(secIt == sections_.end()) return defaultValue;
     auto keyIt = secIt->second.find(key);
     if(keyIt == secIt->second.end()) return defaultValue;
     
-    std::string val = keyIt->second;
+    String val = keyIt->second;
     std::transform(val.begin(), val.end(), val.begin(), [](unsigned char c){return std::tolower(c);});
     if(val == "true" || val == "on" || val == "yes") return true;
     if(val == "false" || val == "off" || val == "no") return false;

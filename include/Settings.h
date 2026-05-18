@@ -14,9 +14,9 @@ static const uint8_t P_CFG1     = A4;
 static const uint8_t P_CFG2     = A5;
 
 #define SAMPLE_RATE 22050
-#define NUM_CHANNELS 1
+#define NUM_CHANNELS 2
 #define BITS_PER_SAMPLE 16
-#define AUDIO_BUFFER_SIZE 2048
+#define AUDIO_BUFFER_SIZE 4096
 
 //#define MEASURE_THROUGHPUT
 //#define OUTPUT_CSV
