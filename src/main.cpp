@@ -143,6 +143,7 @@ void setup(void) {
 
     bb::Console::console.setFirstResponder(&Player::inst);
     bb::Console::console.start();
+
     Runloop::runloop.start();
 }
 

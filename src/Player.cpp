@@ -99,8 +99,8 @@ Result Player::initialize() {
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.pwdCmd(words, stream); }, 0, 0);
     addCommand("mv", "<from> <to>", "Rename file <from> to <to>", 
                [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.mvCmd(words, stream); }, 2, 2);
-    addCommand("filemap", "", "Print file map", 
-               [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.filemapCmd(words, stream); }, 0, 0);
+    addCommand("filemap", "[build]", "Print or build file map", 
+               [](const std::vector<String>& words, ConsoleStream *stream)->Result { return FileManager::inst.filemapCmd(words, stream); }, 0, 1);
 
     return Subsystem::initialize("player", "Main Player subsystem", "");
 }
@@ -457,6 +457,8 @@ void Player::stopPlayback() {
     LOCKED(pipelineSemaphore_);
     urlStream_.end();
     fileDecoder_.end();
+    mp3_.end();
+    wav_.end();
 
     //bb::printf("Massaging catStream\n");
     catStream_.clear();

@@ -63,7 +63,7 @@ bool FileManager::checkSDCardPresent() {
     return sdPresent_;
 }
 
-bool FileManager::listFilesInDirectory(const String& path, 
+bool FileManager::listFilesInDirectory2(const String& path, 
                                        std::vector<String> &files, 
                                        bool includeDirectories) {
     File file, root;
@@ -113,10 +113,10 @@ bool FileManager::listFilesInDirectory(const String& path,
             continue;
         }
         if((typeFilter & FileTypeFile) && !file.isDirectory()) {
-            names.push_back(path.endsWith("/") ? path + name : path + "/" + name);
+            names.push_back(name);
         }
         if((typeFilter & FileTypeDirectory) && file.isDirectory()) {
-            names.push_back(path.endsWith("/") ? path + name : path + "/" + name);
+            names.push_back(name);
         }
         file.close();
     }
@@ -126,13 +126,15 @@ bool FileManager::listFilesInDirectory(const String& path,
     unsigned int index = 0, maxIndex = 0;
     if(indexingMode_ == IndexOrig) {
         for(const String& name : names) {
-            files[index+1] = name;
+            //bb::printf("Orig: %d ==> '%s'\n", index+1, name.c_str());
+            files[index+1] = path.endsWith("/") ? path + name : path + "/" + name;
             index++;
         }
     } else if(indexingMode_ == IndexAlnum) {
         std::sort(names.begin(), names.end());
         for(const String& name : names) {
-            files[index+1] = name;
+            //bb::printf("AlNum: %d ==> '%s'\n", index+1, name.c_str());
+            files[index+1] = path.endsWith("/") ? path + name : path + "/" + name;
             index++;
         }
     } else if(indexingMode_ == IndexNumAl) {
@@ -150,7 +152,8 @@ bool FileManager::listFilesInDirectory(const String& path,
                     break;
                 }
             }
-            files[index] = name;
+            //bb::printf("NumAl: %d ==> '%s'\n", index, name.c_str());
+            files[index] = path.endsWith("/") ? path + name : path + "/" + name;;
             if(index > maxIndex) {
                 maxIndex = index;
             }
@@ -158,7 +161,7 @@ bool FileManager::listFilesInDirectory(const String& path,
         unsigned int alphaIndex = maxIndex+1;
         std::sort(alphaNames.begin(), alphaNames.end());
         for(const String& name : alphaNames) {
-            files[alphaIndex++] = name;
+            files[alphaIndex++] = path.endsWith("/") ? path + name : path + "/" + name;
         }
     }
 
@@ -172,7 +175,6 @@ bool FileManager::printDirectory(const String& path, bool recursive) {
         bb::printf("Failed to open /\n");
         return false;
     }
-    bb::printf("Files under '%s'\n", path.c_str());
     bool retval = printDirectory(root, recursive);
     root.close();
     return retval;
@@ -342,6 +344,7 @@ void FileManager::addSDCardInsertCallback(std::function<void(bool)> cb) {
 
 
 Result FileManager::lsCmd(const std::vector<String>& args, ConsoleStream *stream) {
+    Runloop::runloop.excuseOverrun();
     if(args.size() == 0) {
         if(printDirectory(curWd_) == true) return RES_OK;
         return RES_SUBSYS_RESOURCE_NOT_AVAILABLE;
@@ -352,6 +355,7 @@ Result FileManager::lsCmd(const std::vector<String>& args, ConsoleStream *stream
 }
 
 Result FileManager::catCmd(const std::vector<String>& args, ConsoleStream *stream) {
+    Runloop::runloop.excuseOverrun();
     String path = normalizePath(args[0]);
     if(fileExists(path) == false) return RES_SUBSYS_RESOURCE_NOT_AVAILABLE;
     File f = SD.open(path);
@@ -410,6 +414,13 @@ Result FileManager::mvCmd(const std::vector<String>& args, ConsoleStream *stream
 }
 
 Result FileManager::filemapCmd(const std::vector<String>& args, ConsoleStream *stream) {
+    if(args.size() == 1) {
+        if(args[0] == "build") {
+            buildFileMap();
+        } else {
+            return RES_CMD_INVALID_ARGUMENT;
+        }
+    }
     printFileMap(stream);
     return RES_OK;
 }

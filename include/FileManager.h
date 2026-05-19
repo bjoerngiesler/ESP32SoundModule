@@ -48,7 +48,7 @@ public:
     bool printDirectory(const String& path="/", bool recursive=false);
     bool printContentsOfFile(const String& path);
 
-    bool listFilesInDirectory(const String& path, 
+    bool listFilesInDirectory2(const String& path, 
                               std::vector<String> &files, 
                               bool includeDirectories=false);
     bool listFilesInDirectory(const String& path, 
